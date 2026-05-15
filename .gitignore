@@ -1,5 +1,4 @@
-# Enable plots
-!outputs/plots/
+notes/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
