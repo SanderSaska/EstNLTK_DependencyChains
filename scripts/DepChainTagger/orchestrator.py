@@ -26,7 +26,7 @@ from .config import (
 
 
 @dataclass(slots=True)
-class DepChainTaggerOrchestrator:
+class DepTaggerOrchestrator:
     """
     End-to-end orchestrator for dependency-chain tagging on sentence layers.
 

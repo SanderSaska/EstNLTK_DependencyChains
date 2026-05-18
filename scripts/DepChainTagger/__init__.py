@@ -4,6 +4,8 @@ from .config import (
     SELECTIVITY_WEIGHT_EXACT,
     SELECTIVITY_WEIGHT_NEGATION,
     SELECTIVITY_WEIGHT_EXTRA_PREDICATE,
+    SELECTIVITY_WEIGHT_MEMBERSHIP,
+    SELECTIVITY_WEIGHT_CONTAINS,
     DEFAULT_MAX_MATCHES_PER_COLLECTOR,
     DEFAULT_MAX_MATCHES_PER_SENTENCE,
     DEFAULT_MAX_TOTAL_MATCHES,
@@ -15,12 +17,15 @@ from .config import (
     DEFAULT_OUTPUT_LAYER_NAME,
     DEFAULT_OUTPUT_ATTRIBUTES,
     DEFAULT_SYNTAX_LAYER_NAME,
+    DEFAULT_SENTENCES_LAYER_NAME,
     DEFAULT_ANCHOR_ROLE,
+    RESERVED_NODE_ATTRIBUTE_NAMES,
+    RESERVED_EDGE_ATTRIBUTE_NAMES,
 )
 from .graph import SyntaxGraphIndex
 from .conditions import ValueCondition, FeatureCondition, NodeConstraint, EdgeConstraint
 from .patterns import PathPattern, ChainMatch, MatchCollector
 from .matcher import DepChainMatcher
 from .decorator import PhraseDecorator
-from .orchestrator import DepChainTaggerOrchestrator
+from .orchestrator import DepTaggerOrchestrator
 from .tagger import DepChainTagger

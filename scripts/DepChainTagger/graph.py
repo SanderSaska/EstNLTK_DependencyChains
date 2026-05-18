@@ -10,6 +10,8 @@ from typing import (
 )
 
 from .types import DirectionMode
+import matplotlib.pyplot as plt
+import networkx as nx
 
 
 class SyntaxGraphIndex:
@@ -40,13 +42,13 @@ class SyntaxGraphIndex:
     """
 
     stanza_syntax: estnltk.Layer
-    nodes_by_id: Dict[int, estnltk.Span] = {}
-    parent_by_id: Dict[int, Optional[int]] = {}
-    children_by_id: Dict[int, List[int]] = {}
-    token_order: List[int] = []
-    sent_id: Optional[int] = None
-    sentence_span: Optional[Tuple[int, int]] = None
-    lookup_cache: Dict[Tuple, Any] = {}
+    nodes_by_id: Dict[int, estnltk.Span]
+    parent_by_id: Dict[int, Optional[int]]
+    children_by_id: Dict[int, List[int]]
+    token_order: List[int]
+    sent_id: Optional[int]
+    sentence_span: Optional[Tuple[int, int]]
+    lookup_cache: Dict[Tuple, Any]
 
     def __init__(
         self: Self,
@@ -171,7 +173,7 @@ class SyntaxGraphIndex:
 
     def iter_edges(
         self: Self, direction: DirectionMode = DirectionMode.BOTH
-    ) -> Iterable[Tuple[Optional[estnltk.Span], Optional[estnltk.Span], str]]:
+    ) -> Iterable[Tuple[Optional[estnltk.Span], Optional[estnltk.Span], DirectionMode]]:
         """
         Iterates over all edges in the graph, optionally filtering by direction (up, down, or both).
 
@@ -190,19 +192,14 @@ class SyntaxGraphIndex:
             parent_id = self.parent_by_id.get(token_id)
             if parent_id is not None and parent_id != 0:
                 parent_node = self.nodes_by_id.get(parent_id)
-                if direction in [
-                    DirectionMode.BOTH,
-                    DirectionMode.UP,
-                ]:  # Move from id to head (up the tree)
-                    yield (node, parent_node, DirectionMode.UP.value)
-                if direction in [
-                    DirectionMode.BOTH,
-                    DirectionMode.DOWN,
-                ]:  # Move from head to id (down the tree)
-                    if (
-                        parent_id != 0
-                    ):  # Skip the root node which has no parent (head = 0), so we don't yield a down edge for it
-                        yield (parent_node, node, DirectionMode.DOWN.value)
+                if direction in [DirectionMode.BOTH, DirectionMode.UP]:
+                    # Move from id to head (up the tree)
+                    yield (node, parent_node, DirectionMode.UP)
+                if direction in [DirectionMode.BOTH, DirectionMode.DOWN]:
+                    # Move from head to id (down the tree)
+                    if parent_id != 0:
+                        # Skip the root node which has no parent (head = 0)
+                        yield (parent_node, node, DirectionMode.DOWN)
 
     def get_root_nodes(self: Self) -> List[estnltk.Span]:
         """
@@ -232,6 +229,211 @@ class SyntaxGraphIndex:
             bool: True if the given token ID exists in the graph index, False otherwise.
         """
         return token_id in self.nodes_by_id
+
+    def _format_node_label(
+        self: Self, token_id: int, with_node_labels: bool = False
+    ) -> str:
+        """
+        Build a human-readable node label for graph visualisation.
+
+        The label includes the surface form, the universal part-of-speech tag,
+        and the morphological features.
+        """
+        node = self.nodes_by_id[token_id]
+        word = getattr(node, "text", "") or ""
+        upostag = getattr(node, "upostag", None)
+        feats = getattr(node, "feats", None)
+        feats_text = "_" if not feats else str(feats)
+        if with_node_labels:
+            return f"{word}\n{upostag or '_'}\n{feats_text}"
+        return f"{word}"
+
+    def _format_edge_label(
+        self: Self, child_id: int, with_edge_labels: bool = True
+    ) -> str:
+        """
+        Build the dependency-label text for an edge.
+
+        The dependency relation is stored on the child node in Stanza syntax.
+        """
+        child_node = self.nodes_by_id[child_id]
+        if with_edge_labels:
+            return str(getattr(child_node, "deprel", "") or "")
+        return ""
+
+    def to_networkx_graph(
+        self: Self, with_node_labels: bool = False, with_edge_labels: bool = True
+    ) -> nx.DiGraph:
+        """
+        Convert the indexed tree into a NetworkX directed graph.
+
+        Returns:
+            networkx.DiGraph: A directed graph with parent-to-child edges.
+
+        Raises:
+            ImportError: If NetworkX is not installed.
+        """
+        try:
+            import networkx as nx
+        except ImportError as exc:
+            raise ImportError(
+                "SyntaxGraphIndex.to_networkx_graph() requires the 'networkx' package."
+            ) from exc
+
+        graph = nx.DiGraph()
+
+        for token_id in self.token_order:
+            node = self.nodes_by_id[token_id]
+            graph.add_node(
+                token_id,
+                label=self._format_node_label(
+                    token_id, with_node_labels=with_node_labels
+                ),
+                text=getattr(node, "text", None),
+                upostag=getattr(node, "upostag", None),
+                feats=getattr(node, "feats", None),
+            )
+
+        for child_id in self.token_order:
+            parent_id = self.parent_by_id.get(child_id)
+            if parent_id is None or parent_id == 0:
+                continue
+            graph.add_edge(
+                parent_id,
+                child_id,
+                label=self._format_edge_label(
+                    child_id, with_edge_labels=with_edge_labels
+                ),
+            )
+
+        return graph
+
+    def visualize(
+        self: Self,
+        ax: Optional[Any] = None,
+        figsize: Tuple[int, int] = (12, 8),
+        layout: str = "dot",
+        with_node_labels: bool = False,
+        with_edge_labels: bool = True,
+        node_size: int = 2600,
+        font_size: int = 8,
+        title: Optional[str] = None,
+        show: bool = True,
+    ):
+        """
+        Visualise the dependency tree as a readable graph.
+
+        Args:
+            ax (Optional[Axes], optional): Existing matplotlib axis to draw on.
+            layout (str, optional): Layout strategy. Supported values are
+                "spring" and "dot" (uses Graphviz if available, otherwise
+                falls back to a spring layout).
+            with_labels (bool, optional): Whether to draw node labels.
+            node_size (int, optional): Matplotlib node size.
+            font_size (int, optional): Font size used for node and edge labels.
+            title (Optional[str], optional): Optional plot title.
+            show (bool, optional): Whether to call ``plt.show()``.
+
+        Returns:
+            matplotlib.figure.Figure: The created figure.
+
+        Raises:
+            ImportError: If NetworkX or Matplotlib is not installed.
+            ValueError: If an unsupported layout is requested.
+        """
+
+        graph = self.to_networkx_graph(
+            with_node_labels=with_node_labels, with_edge_labels=with_edge_labels
+        )
+
+        if ax is None:
+            fig, ax = plt.subplots(figsize=figsize)
+        else:
+            fig = ax.figure
+
+        if layout == "bipartite":
+            positions = nx.bipartite_layout(graph, nodes=graph.nodes())
+        elif layout == "kamada_kawai":
+            positions = nx.kamada_kawai_layout(graph)
+        elif layout == "planar":
+            positions = nx.planar_layout(graph)
+        elif layout == "random":
+            positions = nx.random_layout(graph, seed=42)
+        elif layout == "spectral":
+            positions = nx.spectral_layout(graph)
+        elif layout == "spring":
+            positions = nx.spring_layout(graph, seed=42)
+        elif layout == "shell":
+            positions = nx.shell_layout(graph)
+        else:
+            try:
+                positions = nx.nx_agraph.graphviz_layout(graph, prog=layout)
+            except Exception:
+                print(
+                    f"Graphviz layout '{layout}' is not available. Falling back to spring layout."
+                )
+                positions = nx.spring_layout(graph, seed=42)
+
+        node_labels = nx.get_node_attributes(graph, "label")
+        edge_labels = nx.get_edge_attributes(graph, "label")
+
+        nx.draw_networkx_edges(
+            graph,
+            positions,
+            ax=ax,
+            arrows=True,
+            arrowstyle="->",
+            arrowsize=18,
+            width=1.3,
+            edge_color="#666666",
+        )
+        nx.draw_networkx_nodes(
+            graph,
+            positions,
+            ax=ax,
+            node_size=node_size,
+            node_color="#dfeaf5",
+            edgecolors="#4a6fa5",
+            linewidths=1.2,
+        )
+        nx.draw_networkx_labels(
+            graph,
+            positions,
+            labels=node_labels,
+            ax=ax,
+            font_size=font_size,
+            font_family="sans-serif",
+        )
+        nx.draw_networkx_edge_labels(
+            graph,
+            positions,
+            edge_labels=edge_labels,
+            ax=ax,
+            font_size=font_size,
+            label_pos=0.5,
+        )
+
+        ax.set_axis_off()
+        ax.set_title(title or self._build_visualization_title())
+        fig.tight_layout()
+
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+
+        return fig
+
+    def _build_visualization_title(self: Self) -> str:
+        """
+        Create a default title for the visualisation.
+        """
+        sentence_id = (
+            f"Sentence {self.sent_id}" if self.sent_id is not None else "Sentence"
+        )
+        if self.sentence_span is None:
+            return f"{sentence_id} dependency tree"
+        return f"{sentence_id} dependency tree {self.sentence_span}"
 
     def _validate_tree(self: Self) -> bool:
         """

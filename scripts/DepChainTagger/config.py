@@ -37,13 +37,35 @@ Example::
 # 2.  NodeConstraint — selectivity scoring weights
 # ──────────────────────────────────────────────────────────────
 SELECTIVITY_WEIGHT_EXACT: float = 1.0
-"""Score added when a ValueCondition or FeatureCondition uses EXACT mode."""
+"""Score added when a ValueCondition or FeatureCondition uses EXACT mode.
+EXACT is the most selective mode because it pins one specific value, so it gets the highest weight.
+"""
 
 SELECTIVITY_WEIGHT_NEGATION: float = 0.5
-"""Score added when a ValueCondition or FeatureCondition uses NEGATION mode."""
+"""Score added when a ValueCondition or FeatureCondition uses NEGATION mode.
+NEGATION is less selective than EXACT because it only excludes one value, while EXACT pins one value.
+"""
 
 SELECTIVITY_WEIGHT_EXTRA_PREDICATE: float = 0.5
-"""Score added per extra predicate in `NodeConstraint.extra_predicates`."""
+"""Score added per extra predicate in `NodeConstraint.extra_predicates`.
+Extra predicates are user-defined functions that can check any property of the node, so they are more flexible but less selective than built-in attribute conditions.
+"""
+
+SELECTIVITY_WEIGHT_MEMBERSHIP: float = 0.75
+"""Score added when a ValueCondition or FeatureCondition uses MEMBERSHIP mode.
+
+MEMBERSHIP is more selective than NEGATION (which only excludes one value)
+but less selective than EXACT (which pins one value).
+"""
+
+SELECTIVITY_WEIGHT_CONTAINS: float = 0.75
+"""Score added when a ValueCondition uses CONTAINS mode.
+
+CONTAINS is comparable in selectivity to MEMBERSHIP: both narrow the match
+space to a subset rather than pinning a single value (EXACT).  CONTAINS
+requires the condition value to be present among the elements or keys of a
+collection-valued attribute, which is moderately restrictive.
+"""
 
 # ──────────────────────────────────────────────────────────────
 # 3.  Match capacity limits
@@ -55,7 +77,7 @@ DEFAULT_MAX_MATCHES_PER_SENTENCE: int = 100_000
 """Default `max_matches_per_sentence` for `DepChainMatcher`."""
 
 DEFAULT_MAX_TOTAL_MATCHES: int = 1_000_000
-"""Default `max_total_matches` for `DepChainTaggerOrchestrator`."""
+"""Default `max_total_matches` for the orchestrator."""
 
 # ──────────────────────────────────────────────────────────────
 # 4.  Deduplication
@@ -74,20 +96,21 @@ DEFAULT_DEDUP_MODE_COLLECTOR: str = "none"
 """Default `dedup_mode` for `MatchCollector`."""
 
 DEFAULT_DEDUP_MODE_SENTENCE: str = "role_based"
-"""Default `sentence_match_dedup_mode` for `DepChainTaggerOrchestrator`."""
+"""Default `sentence_match_dedup_mode` for the orchestrator (used by taggers)."""
 
 DEFAULT_DEDUP_MODE_GLOBAL: str = "none"
-"""Default `global_dedup_mode` for `DepChainTaggerOrchestrator`."""
+"""Default `global_dedup_mode` for the orchestrator (used by taggers)."""
 
 # ──────────────────────────────────────────────────────────────
 # 5.  Tagger — output layer defaults  (H11)
 # ──────────────────────────────────────────────────────────────
 DEFAULT_OUTPUT_LAYER_NAME: str = "dep_chains"
-"""Default name of the estnltk Layer produced by `DepChainTagger`."""
+"""Default name of the estnltk Layer produced by `DepChainTagger` or `DepChildTagger`."""
 
 DEFAULT_OUTPUT_ATTRIBUTES: tuple = (
     "pattern_name",
     "matched_text",
+    # "text",
     "upostag",
     "xpostag",
     "feats",
@@ -95,18 +118,25 @@ DEFAULT_OUTPUT_ATTRIBUTES: tuple = (
     "deprel",
     "role",
     "is_anchor",
-    "match_id",
+    # "match_id",
 )
 """Default attribute names on the output Layer."""
+
+DEFAULT_OUTPUT_SPAN_NAMES: tuple = ("text",)
+"""Default span names on the output Layer."""
 
 # ──────────────────────────────────────────────────────────────
 # 6.  Tagger — input layer names  (H2 / H12)
 # ──────────────────────────────────────────────────────────────
 DEFAULT_SYNTAX_LAYER_NAME: str = "stanza_syntax"
-"""Name of the input syntax layer that `DepChainTagger` reads from.
+"""Name of the input syntax layer that taggers read from (e.g. `DepChainTagger`).
 
 Currently hard-wired to Stanza Syntax output.  Making this configurable
 is the first step toward supporting other syntax providers.
+"""
+DEFAULT_SENTENCES_LAYER_NAME: str = "sentences"
+"""Name of the input sentences layer that taggers read from.
+This is used for sentence-level deduplication and cross-sentence matching.
 """
 
 # ──────────────────────────────────────────────────────────────
@@ -116,4 +146,40 @@ DEFAULT_ANCHOR_ROLE: str = "self"
 """Role name used as fallback anchor when the pattern's `anchor_role`
 is not present in the match.  Override this if your patterns use a
 different convention for the "self" / pivot role.
+"""
+
+# ──────────────────────────────────────────────────────────────
+# 8.  attribute_conditions — reserved attribute names
+# ──────────────────────────────────────────────────────────────
+RESERVED_NODE_ATTRIBUTE_NAMES: dict = {
+    "feats": "feats_condition (uses FeatureCondition, not ValueCondition)",
+}
+"""Attribute names that must NOT appear in ``NodeConstraint.attribute_conditions``.
+
+These names are reserved because they require a different condition type
+(``FeatureCondition`` for dict-valued attributes) or are handled by dedicated
+fields with non-scalar matching logic.
+
+When a user accidentally includes one of these keys, the validation in
+``NodeConstraint._validate_or_raise()`` raises a ``ValueError`` with a
+clear message pointing to the dedicated field they should use instead.
+
+Extend this mapping when new dedicated condition fields are added to
+``NodeConstraint`` that use a condition type other than ``ValueCondition``.
+"""
+
+RESERVED_EDGE_ATTRIBUTE_NAMES: dict = {
+    "direction": "direction (structural field, uses DirectionMode enum)",
+    "hops": "min_hops / max_hops (structural fields, use range logic)",
+}
+"""Attribute names that must NOT appear in ``EdgeConstraint.attribute_conditions``.
+
+These names are reserved because they are handled by dedicated structural
+fields on ``EdgeConstraint`` that use range or enum logic rather than simple
+value matching.  ``attribute_conditions`` is intended for scalar attributes
+looked up via ``getattr(edge_context, key, None)`` and matched with
+``ValueCondition``.
+
+Extend this mapping when new dedicated structural fields are added to
+``EdgeConstraint``.
 """

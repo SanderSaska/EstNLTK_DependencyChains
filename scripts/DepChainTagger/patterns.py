@@ -42,13 +42,23 @@ class PathPattern:
     name: str
     node_steps: Tuple[NodeConstraint, ...]
     edge_steps: Tuple[EdgeConstraint, ...]
-    anchor_role: str
-    emit_roles: Tuple[str, ...]
+    anchor_role: Optional[str] = None
+    emit_roles: Tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self: Self) -> None:
         """
         Validate config once.
         """
+        # If anchor_role was not provided, default to the first node step's role.
+        if self.anchor_role is None:
+            if not self.node_steps:
+                raise ValueError("Cannot infer anchor_role: node_steps is empty")
+            object.__setattr__(self, "anchor_role", self.node_steps[0].role)
+
+        # Ensure emit_roles has a sensible default (empty tuple handled later in validation)
+        if self.emit_roles is None:
+            object.__setattr__(self, "emit_roles", tuple())
+
         self._validate_or_raise()
 
     def get_node_constraint(self: Self, role: str) -> Optional[NodeConstraint]:
@@ -255,13 +265,12 @@ class ChainMatch:
             "role_to_token_id": self.role_to_token_id,
             "role_to_node": {
                 role: {
-                    "start": node.start,
-                    "end": node.end,
-                    "upostag": node.upostag,
-                    "xpostag": node.xpostag,
-                    "lemma": node.lemma,
-                    "feats": node.feats,
-                    # Include any other relevant properties of the node as needed
+                    "start": getattr(node, "start", None),
+                    "end": getattr(node, "end", None),
+                    "upostag": getattr(node, "upostag", None),
+                    "xpostag": getattr(node, "xpostag", None),
+                    "lemma": getattr(node, "lemma", None),
+                    "feats": getattr(node, "feats", None),
                 }
                 for role, node in self.role_to_node.items()
             },
@@ -387,6 +396,9 @@ class MatchCollector:
     matches: List[ChainMatch] = field(default_factory=list)
     dedup_mode: str = DEFAULT_DEDUP_MODE_COLLECTOR
     max_matches: int = DEFAULT_MAX_MATCHES_PER_COLLECTOR
+    # Internal O(1) dedup indexes (kept out of repr/init)
+    _exact_keys: Set[Tuple[Any, ...]] = field(default_factory=set, init=False, repr=False)
+    _role_keys: Set[Tuple[Any, ...]] = field(default_factory=set, init=False, repr=False)
 
     def __post_init__(self: Self) -> None:
         """
@@ -408,6 +420,11 @@ class MatchCollector:
         role_items = tuple(sorted(match.role_to_token_id.items()))
         return (match.pattern_name, match.sentence_index, role_items)
 
+    def _make_exact_key(self: Self, match: ChainMatch) -> Tuple[Any, ...]:
+        """Stable exact-match key for O(1) exact deduplication."""
+        role_items = tuple(sorted(match.role_to_token_id.items()))
+        return (match.pattern_name, match.sentence_index, role_items, match.matched_text)
+
     def is_duplicate(self: Self, match: ChainMatch) -> bool:
         """
         Check whether `match` is already present according to current strategy.
@@ -422,14 +439,10 @@ class MatchCollector:
             return False
 
         if self.dedup_mode == "exact":
-            return match in self.matches
+            return self._make_exact_key(match) in self._exact_keys
 
         if self.dedup_mode == "role_based":
-            target_key = self.make_dedup_key(match)
-            for existing_match in self.matches:
-                if self.make_dedup_key(existing_match) == target_key:
-                    return True
-            return False
+            return self.make_dedup_key(match) in self._role_keys
 
         # Defensive fallback; should be unreachable due to validation.
         raise ValueError(f"Unsupported dedup_mode: {self.dedup_mode}")
@@ -451,6 +464,15 @@ class MatchCollector:
             return False
 
         self.matches.append(match)
+        # Update internal indexes for fast dedup checks
+        try:
+            self._exact_keys.add(self._make_exact_key(match))
+        except Exception:
+            pass
+        try:
+            self._role_keys.add(self.make_dedup_key(match))
+        except Exception:
+            pass
         return True
 
     def extend(self: Self, new_matches: Iterable[ChainMatch]) -> int:
@@ -483,6 +505,8 @@ class MatchCollector:
         Remove all collected matches.
         """
         self.matches.clear()
+        self._exact_keys.clear()
+        self._role_keys.clear()
 
     def all(self: Self) -> List[ChainMatch]:
         """
@@ -519,10 +543,8 @@ class MatchCollector:
         """
         Validate constructor arguments with explicit, actionable errors.
         """
-        if self.dedup_mode not in {"none", "exact", "role_based"}:
-            raise ValueError(
-                "dedup_mode must be one of 'none', 'exact', or 'role_based'."
-            )
+        if self.dedup_mode not in VALID_DEDUP_MODES:
+            raise ValueError(f"dedup_mode must be one of {VALID_DEDUP_MODES}.")
 
         if not isinstance(self.max_matches, int) or self.max_matches <= 0:
             raise ValueError("max_matches must be a positive integer.")

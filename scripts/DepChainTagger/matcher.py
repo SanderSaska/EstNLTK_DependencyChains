@@ -328,6 +328,12 @@ class DepChainMatcher:
         Enumerate candidate source nodes that can reach `target_node`.
 
         This is used when filling pattern steps to the left of the anchor index.
+        Instead of iterating over every node in the graph (O(n²)), we reverse
+        the edge direction and look up the target's neighbours directly.
+
+        For single-hop edges (the common case) this is O(children + 1).
+        For multi-hop edges we find candidate sources via reverse traversal,
+        then verify each with a single forward call to `_enumerate_from_node`.
 
         Args:
             graph_index (SyntaxGraphIndex): Sentence-level dependency graph.
@@ -337,15 +343,84 @@ class DepChainMatcher:
                 sentence character spans, for cross-sentence edge detection.
         """
         candidates: List[Tuple[estnltk.Span, EdgeContext]] = []
-        for source_node in graph_index.iter_nodes():
-            for candidate_node, edge_context in self._enumerate_from_node(
-                graph_index=graph_index,
-                source_node=source_node,
-                edge_constraint=edge_constraint,
-                sentence_spans=sentence_spans,
-            ):
-                if self._get_node_id(candidate_node) == self._get_node_id(target_node):
-                    candidates.append((source_node, edge_context))
+        min_hops, max_hops = self._resolve_hop_bounds(
+            graph_index=graph_index,
+            min_hops=edge_constraint.min_hops,
+            max_hops=edge_constraint.max_hops,
+        )
+
+        for direction in self._directions_to_try(edge_constraint.direction):
+            for hops in range(min_hops, max_hops + 1):
+                # ── Fast path: single-hop direct lookups ──────────────
+                if hops == 1 and direction == DirectionMode.UP:
+                    # source --UP(1)--> target  ⇒  source is a child of target
+                    for source_node in graph_index.get_children(
+                        self._get_node_id(target_node)
+                    ):
+                        deprel = getattr(source_node, "deprel", None)
+                        crosses = self._crosses_sentence(
+                            source_node, target_node, sentence_spans
+                        )
+                        edge_context = self._build_edge_context(
+                            direction=DirectionMode.UP,
+                            deprel=deprel,
+                            hops=1,
+                            crosses_sentence=crosses,
+                        )
+                        if edge_constraint.matches(edge_context):
+                            candidates.append((source_node, edge_context))
+                    continue
+
+                if hops == 1 and direction == DirectionMode.DOWN:
+                    # source --DOWN(1)--> target  ⇒  source is the parent of target
+                    source_node = graph_index.get_parent(self._get_node_id(target_node))
+                    if source_node is not None:
+                        deprel = getattr(target_node, "deprel", None)
+                        crosses = self._crosses_sentence(
+                            source_node, target_node, sentence_spans
+                        )
+                        edge_context = self._build_edge_context(
+                            direction=DirectionMode.DOWN,
+                            deprel=deprel,
+                            hops=1,
+                            crosses_sentence=crosses,
+                        )
+                        if edge_constraint.matches(edge_context):
+                            candidates.append((source_node, edge_context))
+                    continue
+
+                # ── General path: multi-hop reverse traversal ─────────
+                # Find candidate sources by walking the *reverse* direction
+                # from the target, then verify each with a forward traversal
+                # to obtain the correct edge context (deprel of last hop).
+                if direction == DirectionMode.UP:
+                    reverse_direction = DirectionMode.DOWN
+                else:
+                    reverse_direction = DirectionMode.UP
+
+                source_pairs = self._nodes_at_exact_hops(
+                    graph_index=graph_index,
+                    start_node=target_node,
+                    direction=reverse_direction,
+                    hops=hops,
+                )
+
+                for source_node, _unused_deprel in source_pairs:
+                    # Verify forward and get the correct edge context
+                    for (
+                        candidate_node,
+                        edge_context,
+                    ) in self._enumerate_from_node(
+                        graph_index=graph_index,
+                        source_node=source_node,
+                        edge_constraint=edge_constraint,
+                        sentence_spans=sentence_spans,
+                    ):
+                        if self._get_node_id(candidate_node) == self._get_node_id(
+                            target_node
+                        ):
+                            candidates.append((source_node, edge_context))
+
         return candidates
 
     def _nodes_at_exact_hops(
@@ -439,11 +514,12 @@ class DepChainMatcher:
         """
         Create an `EdgeContext` instance for edge constraint checks.
         """
-        edge_context = EdgeContext()
-        edge_context.direction = direction
-        edge_context.deprel = deprel
-        edge_context.hops = hops
-        edge_context.crosses_sentence = crosses_sentence
+        edge_context = EdgeContext(
+            direction=direction,
+            deprel=deprel,
+            hops=hops,
+            crosses_sentence=crosses_sentence,
+        )
         return edge_context
 
     def _sentence_index_for_node(
@@ -589,10 +665,8 @@ class DepChainMatcher:
         ):
             raise TypeError("patterns must be a tuple of PathPattern objects.")
 
-        if self.dedup_mode not in {"none", "exact", "role_based"}:
-            raise ValueError(
-                "dedup_mode must be one of 'none', 'exact', or 'role_based'."
-            )
+        if self.dedup_mode not in VALID_DEDUP_MODES:
+            raise ValueError(f"dedup_mode must be one of {VALID_DEDUP_MODES}.")
 
         if (
             not isinstance(self.max_matches_per_sentence, int)
