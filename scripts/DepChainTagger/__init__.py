@@ -29,3 +29,47 @@ from .matcher import DepChainMatcher
 from .decorator import PhraseDecorator
 from .orchestrator import DepTaggerOrchestrator
 from .tagger import DepChainTagger
+from .child_matcher import DepChildMatcher
+from .child_tagger import DepChildTagger
+
+__all__ = [
+    "ConditionMode",
+    "DirectionMode",
+    "EdgeContext",
+    "NodePredicate",
+    "DEFAULT_MISSING_MARKERS",
+    "SELECTIVITY_WEIGHT_EXACT",
+    "SELECTIVITY_WEIGHT_NEGATION",
+    "SELECTIVITY_WEIGHT_EXTRA_PREDICATE",
+    "SELECTIVITY_WEIGHT_MEMBERSHIP",
+    "SELECTIVITY_WEIGHT_CONTAINS",
+    "DEFAULT_MAX_MATCHES_PER_COLLECTOR",
+    "DEFAULT_MAX_MATCHES_PER_SENTENCE",
+    "DEFAULT_MAX_TOTAL_MATCHES",
+    "VALID_DEDUP_MODES",
+    "DEFAULT_DEDUP_MODE_MATCHER",
+    "DEFAULT_DEDUP_MODE_COLLECTOR",
+    "DEFAULT_DEDUP_MODE_SENTENCE",
+    "DEFAULT_DEDUP_MODE_GLOBAL",
+    "DEFAULT_OUTPUT_LAYER_NAME",
+    "DEFAULT_OUTPUT_ATTRIBUTES",
+    "DEFAULT_SYNTAX_LAYER_NAME",
+    "DEFAULT_SENTENCES_LAYER_NAME",
+    "DEFAULT_ANCHOR_ROLE",
+    "RESERVED_NODE_ATTRIBUTE_NAMES",
+    "RESERVED_EDGE_ATTRIBUTE_NAMES",
+    "SyntaxGraphIndex",
+    "ValueCondition",
+    "FeatureCondition",
+    "NodeConstraint",
+    "EdgeConstraint",
+    "PathPattern",
+    "ChainMatch",
+    "MatchCollector",
+    "DepChainMatcher",
+    "PhraseDecorator",
+    "DepTaggerOrchestrator",
+    "DepChainTagger",
+    "DepChildMatcher",
+    "DepChildTagger",
+]

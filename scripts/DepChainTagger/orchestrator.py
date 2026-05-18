@@ -48,7 +48,7 @@ class DepTaggerOrchestrator:
     """
 
     patterns: Tuple[PathPattern, ...]
-    matcher: Optional[DepChainMatcher] = None
+    matcher: Optional[Any] = None
     decorator: Optional[PhraseDecorator] = None
     sentence_match_dedup_mode: str = DEFAULT_DEDUP_MODE_SENTENCE
     max_matches_per_sentence: int = DEFAULT_MAX_MATCHES_PER_SENTENCE
@@ -197,7 +197,7 @@ class DepTaggerOrchestrator:
         decorator = self._get_decorator()
         return decorator.decorate_matches(matches)
 
-    def _get_matcher(self: Self) -> DepChainMatcher:
+    def _get_matcher(self: Self) -> Any:
         """
         Return configured matcher as non-optional instance.
         """
@@ -222,8 +222,13 @@ class DepTaggerOrchestrator:
         ):
             raise TypeError("patterns must be a tuple of PathPattern objects.")
 
-        if self.matcher is not None and not isinstance(self.matcher, DepChainMatcher):
-            raise TypeError("matcher must be a DepChainMatcher or None.")
+        if self.matcher is not None:
+            if not hasattr(self.matcher, "match_sentence"):
+                raise TypeError(
+                    "matcher must provide a match_sentence method or be None."
+                )
+            if not hasattr(self.matcher, "patterns"):
+                raise TypeError("matcher must expose patterns or be None.")
 
         if self.decorator is not None and not isinstance(
             self.decorator, PhraseDecorator
@@ -251,5 +256,5 @@ class DepTaggerOrchestrator:
 
         if self.matcher is not None and self.matcher.patterns != self.patterns:
             raise ValueError(
-                "matcher.patterns must be the same as DepChainTagger.patterns."
+                "matcher.patterns must be the same as the orchestrator patterns."
             )
