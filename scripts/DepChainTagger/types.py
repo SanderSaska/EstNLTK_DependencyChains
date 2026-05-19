@@ -22,15 +22,9 @@ class ConditionMode(str, Enum):
       of condition values.  The *condition* holds a collection; the *attribute* is scalar.
     - **NOT_MEMBERSHIP**: Match when the actual (scalar) value is not in the expected
       iterable of condition values.  This is the logical inverse of MEMBERSHIP.
-    - **CONTAINS**: Match when the expected (scalar) condition value is found among the
-      elements or keys of a collection-valued attribute.  This is the logical reverse of
-      MEMBERSHIP: the *attribute* holds a collection; the *condition* is scalar.
-
-      For dict-valued attributes, CONTAINS iterates over the **keys** of the dict
-      (not the values) and checks whether any key equals the condition value.  This
-      mirrors Python's ``value in dict`` semantics.  For list, tuple, set, and frozenset
-      attributes, it iterates over the elements.  Strings are treated as scalar values
-      and will never match in CONTAINS mode (use EXACT for string equality).
+    - **REGEX**: Match when the actual value, converted to text, satisfies the given
+      regular-expression pattern. This is intended for flexible substring and pattern
+      matching on scalar attributes.
     """
 
     EXACT = "exact"  # Match when actual value is exactly equal to expected value
@@ -38,9 +32,9 @@ class ConditionMode(str, Enum):
     WILDCARD = "wildcard"  # Match any value (expected value is ignored, must be None)
     MEMBERSHIP = "membership"  # Match when actual value is in the expected iterable (list, tuple, set, etc.)
     NOT_MEMBERSHIP = "not_membership"  # Match when actual value is not in the expected iterable (list, tuple, set, etc.)
-    CONTAINS = "contains"  # Match when the expected value is found among the elements/keys of a collection-valued attribute
-    # TODO: Regex matching mode could be added in the future if needed
-    # TODO: Feats can be structured as dicts or strings, so we need to handle both cases in conditions.
+    REGEX = (
+        "regex"  # Match when the actual value (as text) satisfies a regular expression
+    )
 
 
 class DirectionMode(str, Enum):

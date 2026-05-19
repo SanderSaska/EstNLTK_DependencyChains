@@ -58,13 +58,11 @@ MEMBERSHIP is more selective than NEGATION (which only excludes one value)
 but less selective than EXACT (which pins one value).
 """
 
-SELECTIVITY_WEIGHT_CONTAINS: float = 0.75
-"""Score added when a ValueCondition uses CONTAINS mode.
+SELECTIVITY_WEIGHT_REGEX: float = 0.75
+"""Score added when a ValueCondition uses REGEX mode.
 
-CONTAINS is comparable in selectivity to MEMBERSHIP: both narrow the match
-space to a subset rather than pinning a single value (EXACT).  CONTAINS
-requires the condition value to be present among the elements or keys of a
-collection-valued attribute, which is moderately restrictive.
+Regex matching is flexible and can express both simple substring checks and
+more precise patterns, so it is treated as moderately selective.
 """
 
 # ──────────────────────────────────────────────────────────────
@@ -110,7 +108,7 @@ DEFAULT_OUTPUT_LAYER_NAME: str = "dep_chains"
 DEFAULT_OUTPUT_ATTRIBUTES: tuple = (
     "pattern_name",
     "matched_text",
-    # "text",
+  # "text",
     "upostag",
     "xpostag",
     "feats",

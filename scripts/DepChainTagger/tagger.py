@@ -30,6 +30,8 @@ from .config import (
 from .orchestrator import DepTaggerOrchestrator
 from .patterns import PathPattern
 
+# TODO: Refactor the output layer layout and annotation payload. Currently we emit one annotation per role with token-level attributes. The output layer span name is text which means that each word in the match might hold all the matches related to that word, which brings some redundancy and duplicates. What we could do instead is to emit one annotation per match, output span names would be the role names defined in the pattern. The annotation payload would then contain the pattern conditions for each role, and the span of the annotation would be the role span.
+
 
 def _deterministic_hash(items: Tuple[Any, ...]) -> str:
     """Return a short stable hash for match identifiers."""

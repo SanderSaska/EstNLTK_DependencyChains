@@ -1,4 +1,5 @@
-import estnltk
+import re
+from collections.abc import Mapping
 from typing import (
     Dict,
     Optional,
@@ -16,23 +17,171 @@ from .config import (
     SELECTIVITY_WEIGHT_EXACT,
     SELECTIVITY_WEIGHT_NEGATION,
     SELECTIVITY_WEIGHT_MEMBERSHIP,
-    SELECTIVITY_WEIGHT_CONTAINS,
+    SELECTIVITY_WEIGHT_REGEX,
     SELECTIVITY_WEIGHT_EXTRA_PREDICATE,
     RESERVED_NODE_ATTRIBUTE_NAMES,
     RESERVED_EDGE_ATTRIBUTE_NAMES,
 )
 
 
+def _is_text_scalar(value: Any) -> bool:
+    """Return True when value should be treated as a scalar text-like leaf."""
+    return isinstance(value, (str, bytes)) or not isinstance(
+        value, (Mapping, list, tuple, set, frozenset)
+    )
+
+
+def _iter_feature_children(value: Any) -> Tuple[Any, ...]:
+    """Return child values that should be traversed when recursing nested features."""
+    if isinstance(value, Mapping):
+        return tuple(value.values())
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return tuple(value)
+    return tuple()
+
+
+def _normalize_recursive(value: Any, normalizer: Optional[Callable[[Any], Any]]) -> Any:
+    """Recursively normalise scalar leaves while preserving container shape."""
+    if normalizer is None:
+        return value
+    if isinstance(value, Mapping):
+        return {
+            key: _normalize_recursive(child, normalizer)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_normalize_recursive(child, normalizer) for child in value]
+    if isinstance(value, tuple):
+        return tuple(_normalize_recursive(child, normalizer) for child in value)
+    if isinstance(value, set):
+        return {_normalize_recursive(child, normalizer) for child in value}
+    if isinstance(value, frozenset):
+        return frozenset(_normalize_recursive(child, normalizer) for child in value)
+    return normalizer(value)
+
+
+def _feature_exact_match(
+    actual_value: Any,
+    expected_value: Any,
+    allow_extra_keys: bool,
+    allow_missing: bool = False,
+) -> bool:
+    """Recursively compare nested feature structures with exact semantics."""
+    if isinstance(expected_value, Mapping):
+        if not isinstance(actual_value, Mapping):
+            return False
+        for key, expected_child in expected_value.items():
+            if key not in actual_value:
+                if allow_missing:
+                    continue
+                return False
+            if not _feature_exact_match(
+                actual_value[key], expected_child, allow_extra_keys, allow_missing
+            ):
+                return False
+        if not allow_extra_keys:
+            actual_keys = set(actual_value.keys())
+            expected_keys = set(expected_value.keys())
+            if actual_keys != expected_keys:
+                return False
+        return True
+
+    if isinstance(expected_value, tuple):
+        if not isinstance(actual_value, tuple) or len(actual_value) != len(expected_value):
+            return False
+        return all(
+            _feature_exact_match(
+                child_actual, child_expected, allow_extra_keys, allow_missing
+            )
+            for child_actual, child_expected in zip(actual_value, expected_value)
+        )
+
+    if isinstance(expected_value, list):
+        if not isinstance(actual_value, list) or len(actual_value) != len(expected_value):
+            return False
+        return all(
+            _feature_exact_match(
+                child_actual, child_expected, allow_extra_keys, allow_missing
+            )
+            for child_actual, child_expected in zip(actual_value, expected_value)
+        )
+
+    if isinstance(expected_value, (set, frozenset)):
+        if not isinstance(actual_value, (set, frozenset)):
+            return False
+        actual_items = list(actual_value)
+        expected_items = list(expected_value)
+        if len(actual_items) != len(expected_items):
+            return False
+
+        used = [False] * len(actual_items)
+
+        def _backtrack(index: int) -> bool:
+            if index == len(expected_items):
+                return True
+            expected_child = expected_items[index]
+            for actual_index, actual_child in enumerate(actual_items):
+                if used[actual_index]:
+                    continue
+                if _feature_exact_match(
+                    actual_child, expected_child, allow_extra_keys, allow_missing
+                ):
+                    used[actual_index] = True
+                    if _backtrack(index + 1):
+                        return True
+                    used[actual_index] = False
+            return False
+
+        return _backtrack(0)
+
+    return actual_value == expected_value
+
+
+def _feature_recursive_match(
+    actual_value: Any,
+    expected_value: Any,
+    allow_extra_keys: bool,
+) -> bool:
+    """Search recursively for a sub-structure matching the expected value."""
+    if _feature_exact_match(actual_value, expected_value, allow_extra_keys):
+        return True
+    for child_value in _iter_feature_children(actual_value):
+        if _feature_recursive_match(child_value, expected_value, allow_extra_keys):
+            return True
+    return False
+
+
+def _feature_any_match(
+    actual_value: Any,
+    candidate_patterns: Any,
+    allow_extra_keys: bool,
+) -> bool:
+    """Check whether any candidate pattern matches the actual structure."""
+    if candidate_patterns is None:
+        return False
+    if isinstance(candidate_patterns, Mapping):
+        items = [dict([(key, value)]) for key, value in candidate_patterns.items()]
+    elif isinstance(candidate_patterns, (list, tuple, set, frozenset)):
+        items = list(candidate_patterns)
+    else:
+        items = [candidate_patterns]
+
+    for candidate in items:
+        if _feature_recursive_match(actual_value, candidate, allow_extra_keys):
+            return True
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class ValueCondition:
     """
-    Match one value using exact, negation, wildcard, membership, or contains logic.
+    Match one scalar value using exact, negation, wildcard, membership, not-membership, or regex logic.
 
     ## Attributes:
-    - **mode** (`ConditionMode`): The matching mode to use (EXACT, NEGATION, WILDCARD, MEMBERSHIP, or CONTAINS).
-    - **value** (`Any`, optional): The value to match against. Required for EXACT, NEGATION, MEMBERSHIP, and CONTAINS modes. Must be None for WILDCARD mode. Defaults to None.
+    - **mode** (`ConditionMode`): The matching mode to use (EXACT, NEGATION, WILDCARD, MEMBERSHIP, NOT_MEMBERSHIP, or REGEX).
+    - **value** (`Any`, optional): The value to match against. Required for EXACT, NEGATION, MEMBERSHIP, NOT_MEMBERSHIP, and REGEX modes. Must be None for WILDCARD mode. Defaults to None.
     - **allow_missing** (`bool`, optional): Whether to allow missing values (e.g., None, empty string, or other specified missing markers) as a match. Defaults to False.
-    - **normalizer** (`Optional[Callable[[Any], Any]]`, optional): An optional function to normalize both the expected value and the actual value before comparison. This can be used to implement case-insensitive matching, for example. When using CONTAINS mode, the normalizer is applied to each element of the collection individually. Defaults to None (no normalization).
+    - **normalizer** (`Optional[Callable[[Any], Any]]`, optional): An optional function to normalize both the expected value and the actual value before comparison. This can be used to implement case-insensitive matching, for example. When using REGEX mode, the normalizer is applied to the text form of the actual value and to the regex pattern text if the pattern was provided as a string. Defaults to None (no normalization).
     - **missing_markers** (`Tuple[Any, ...]`, optional): A tuple of values that should be treated as missing when `allow_missing` is True. Defaults to (None, "", "_").
 
     ## Mode semantics:
@@ -41,12 +190,10 @@ class ValueCondition:
     - **WILDCARD**: Any attribute value matches (``value`` must be None).
     - **MEMBERSHIP**: The actual (scalar) attribute value must be in the iterable ``value``.
       The *condition* holds a collection; the *attribute* is scalar.
-    - **CONTAINS**: The (scalar) ``value`` must be found among the elements or keys of
-      a collection-valued attribute.  For dict-valued attributes, CONTAINS iterates over
-      the **keys** (not the values); for list, tuple, set, and frozenset attributes it
-      iterates over the elements.  Strings are treated as scalar values and will never
-      match in CONTAINS mode (use EXACT for string equality).  The *attribute* holds a
-      collection; the *condition* is scalar.  This is the logical reverse of MEMBERSHIP.
+        - **NOT_MEMBERSHIP**: The actual (scalar) attribute value must not be in the iterable
+            ``value``.
+        - **REGEX**: The text representation of the actual value must match the provided
+            regular-expression pattern.
 
     ## Methods:
     - :func:`~ValueCondition.matches`: Checks whether a given actual value satisfies this condition.
@@ -92,12 +239,10 @@ class ValueCondition:
             return True
 
         if self._is_missing(actual_value):
-            return self.allow_missing
+            return bool(self.allow_missing)
 
-        # CONTAINS handles normalization per-element internally, so we branch
-        # before the whole-value normalizer is applied.
-        if self.mode is ConditionMode.CONTAINS:
-            return self._matches_contains(actual_value)
+        if self.mode is ConditionMode.REGEX:
+            return self._matches_regex(actual_value)
 
         if self.normalizer is not None:
             actual_value = self.normalizer(actual_value)
@@ -128,23 +273,14 @@ class ValueCondition:
             return f"Value must be in {self.value!r}"
         if self.mode is ConditionMode.NOT_MEMBERSHIP:
             return f"Value must not be in {self.value!r}"
-        if self.mode is ConditionMode.CONTAINS:
-            return f"Collection must contain {self.value!r}"
+        if self.mode is ConditionMode.REGEX:
+            return f"Value must match regex {self.value!r}"
         raise ValueError(f"Unsupported mode: {self.mode}")
 
-    def _matches_contains(self: Self, actual_value: Any) -> bool:
+    def _matches_regex(self: Self, actual_value: Any) -> bool:
         """
-        Check whether the condition value is found among the elements or keys
-        of a collection-valued attribute.
-
-        For dict-valued attributes, this iterates over the **keys** (not the
-        values) and checks whether any key equals the condition value.  For
-        list, tuple, set, and frozenset attributes, it iterates over the
-        elements.  Strings are treated as scalar values and will never match
-        in CONTAINS mode (use EXACT for string equality).
-
-        If a normalizer is provided, it is applied to each element individually
-        before comparison with the (already pre-normalized) condition value.
+        Check whether the text representation of the actual value matches the
+        configured regular-expression pattern.
 
         Args:
             actual_value (Any): The collection-valued attribute value to search.
@@ -152,26 +288,21 @@ class ValueCondition:
         Returns:
             bool: True if any element/key matches the condition value, False otherwise.
         """
-        # Determine what to iterate over based on the type of actual_value
-        if isinstance(actual_value, dict):
-            # For dicts, iterate over keys (mirrors Python's ``value in dict``)
-            elements = actual_value.keys()
-        elif isinstance(actual_value, (list, tuple, set, frozenset)):
-            # For list/tuple/set/frozenset, iterate over elements
-            elements = actual_value
+        pattern = self.value
+        if hasattr(pattern, "search"):
+            regex = pattern
+            pattern_text = None
         else:
-            # Scalars (including str) cannot "contain" anything meaningful
-            # in the collection sense.  Return False rather than raising.
-            return False
+            pattern_text = str(pattern)
+            if self.normalizer is not None:
+                pattern_text = self.normalizer(pattern_text)
+            regex = re.compile(pattern_text)
 
-        for element in elements:
-            norm_element = (
-                self.normalizer(element) if self.normalizer is not None else element
-            )
-            if norm_element == self.value:
-                return True
+        text_value = str(actual_value)
+        if self.normalizer is not None:
+            text_value = self.normalizer(text_value)
 
-        return False
+        return bool(regex.search(text_value))
 
     def _is_missing(self: Self, value: Any) -> bool:
         """
@@ -190,17 +321,17 @@ class ValueCondition:
         """
         if not isinstance(self.mode, ConditionMode):
             raise TypeError(
-                "mode must be ConditionMode (EXACT, NEGATION, WILDCARD, MEMBERSHIP, or CONTAINS)."
+                "mode must be ConditionMode (EXACT, NEGATION, WILDCARD, MEMBERSHIP, NOT_MEMBERSHIP, or REGEX)."
             )
 
         if self.mode in (
             ConditionMode.EXACT,
             ConditionMode.NEGATION,
-            ConditionMode.CONTAINS,
+            ConditionMode.REGEX,
         ):
             if self.value is None:
                 raise ValueError(
-                    "value is required for EXACT, NEGATION, and CONTAINS modes."
+                    "value is required for EXACT, NEGATION, and REGEX modes."
                 )
 
         if self.mode is ConditionMode.WILDCARD and self.value is not None:
@@ -230,15 +361,18 @@ class ValueCondition:
 @dataclass(frozen=True, slots=True)
 class FeatureCondition:
     """
-    Match a dictionary of features using exact, negation, or wildcard logic.
+    Match a nested feature structure using exact, negation, membership, or wildcard logic.
+
+    The actual value can be a dict, list, tuple, set, frozenset, string, or any
+    nested combination of those containers. Scalar leaves are compared with the
+    configured normalizer, if one is provided.
+
     ## Attributes:
-    - **mode** (`ConditionMode`): The matching mode to use (EXACT, NEGATION, or WILDCARD).
-    - **required** (`Optional[Dict[str, Any]]`): A dictionary of feature keys and their expected values that must be present for the condition to match. When `mode` is EXACT, all `required` pairs must be present and equal. When `mode` is NEGATION, reject if all `required` pairs match simultaneously.
-    Defaults to None.
-    - **forbidden** (`Optional[Dict[str, Any]]`): A dictionary of feature keys and their values that must not be present for the condition to match. When `mode` is EXACT, all `forbidden` pairs must not be present with equal value. When `mode` is NEGATION, reject if any `forbidden` pair appears with equal value.
-    Defaults to None.
+    - **mode** (`ConditionMode`): The matching mode to use (EXACT, NEGATION, MEMBERSHIP, or WILDCARD).
+    - **required** (`Any`): The required feature structure or pattern.
+    - **forbidden** (`Any`): The forbidden feature structure or pattern.
     - **allow_extra_keys** (`bool`, optional): Whether to allow extra keys in the actual features that are not specified in either `required` or `forbidden`. When `mode` is EXACT and `allow_extra_keys` is False, no keys outside union of `required` and `forbidden` are allowed. When `mode` is NEGATION, `allow_extra_keys` has no effect since we only check the specified keys.
-    Defaults to False.
+    Defaults to True.
     - **allow_missing** (`bool`, optional): Whether to allow missing keys (i.e., keys that are specified in `required` but not present in the actual features) as a match.
     Defaults to False.
     - **normalizer** (`Optional[Callable[[Any], Any]]`, optional): An optional function to normalize both the expected values and the actual values before comparison. This can be used to implement case-insensitive matching, for example.
@@ -249,11 +383,12 @@ class FeatureCondition:
     """
 
     mode: ConditionMode
-    required: Optional[Dict[str, Any]] = None
-    forbidden: Optional[Dict[str, Any]] = None
-    allow_extra_keys: Optional[bool] = False
+    required: Any = None
+    forbidden: Any = None
+    allow_extra_keys: Optional[bool] = True
     allow_missing: Optional[bool] = False
     normalizer: Optional[Callable[[Any], Any]] = None
+    missing_markers: Tuple[Any, ...] = DEFAULT_MISSING_MARKERS
 
     def __post_init__(self: Self) -> None:
         """
@@ -267,17 +402,17 @@ class FeatureCondition:
                 object.__setattr__(
                     self,
                     "required",
-                    {k: self.normalizer(v) for k, v in self.required.items()},
+                    _normalize_recursive(self.required, self.normalizer),
                 )
             if self.forbidden is not None:
                 # dataclass is frozen, so we use object.__setattr__
                 object.__setattr__(
                     self,
                     "forbidden",
-                    {k: self.normalizer(v) for k, v in self.forbidden.items()},
+                    _normalize_recursive(self.forbidden, self.normalizer),
                 )
 
-    def matches(self: Self, actual_value: Dict[str, Any] | None) -> bool:
+    def matches(self: Self, actual_value: Any) -> bool:
         """
         Check whether `actual_value` satisfies this condition.
 
@@ -290,83 +425,71 @@ class FeatureCondition:
         if self.mode is ConditionMode.WILDCARD:
             return True
 
-        if not isinstance(actual_value, dict):
-            return False
+        if self._is_missing(actual_value):
+            return bool(self.allow_missing)
 
-        def norm(v: Any) -> Any:
-            """
-            Apply normalizer if defined, otherwise return value as is.
-
-            Args:
-                v (Any): The value to normalize.
-
-            Returns:
-                Any: The normalized value if normalizer is defined, otherwise the original value.
-            """
-            return self.normalizer(v) if self.normalizer is not None else v
-
-        required = self.required or {}
-        forbidden = self.forbidden or {}
+        actual_value = _normalize_recursive(actual_value, self.normalizer)
 
         if self.mode is ConditionMode.EXACT:
-            # Required checks
-            for key, expected in required.items():
-                if key not in actual_value:
-                    if not self.allow_missing:
-                        return False
-                    continue
-                if norm(actual_value[key]) != expected:
-                    return False
+            if self.required is not None:
+                if isinstance(actual_value, Mapping) and isinstance(self.required, Mapping):
+                    required_keys = set(self.required.keys())
+                    forbidden_keys = (
+                        set(self.forbidden.keys())
+                        if isinstance(self.forbidden, Mapping)
+                        else set()
+                    )
 
-            # Forbidden checks
-            for key, forbidden_value in forbidden.items():
-                if key in actual_value and norm(actual_value[key]) == forbidden_value:
-                    return False
+                    if not bool(self.allow_extra_keys):
+                        allowed_keys = required_keys | forbidden_keys
+                        if not set(actual_value.keys()).issubset(allowed_keys):
+                            return False
 
-            # Extra-key policy check
-            if not self.allow_extra_keys:
-                allowed_keys = set(required.keys()) | set(forbidden.keys())
-                if any(key not in allowed_keys for key in actual_value.keys()):
+                    for key, expected_child in self.required.items():
+                        if key not in actual_value:
+                            if self.allow_missing:
+                                continue
+                            return False
+                        if not _feature_exact_match(
+                            actual_value[key],
+                            expected_child,
+                            bool(self.allow_extra_keys),
+                            bool(self.allow_missing),
+                        ):
+                            return False
+                elif not _feature_exact_match(
+                    actual_value,
+                    self.required,
+                    bool(self.allow_extra_keys),
+                    bool(self.allow_missing),
+                ):
                     return False
-
+            if self.forbidden is not None and _feature_any_match(
+                actual_value, self.forbidden, True
+            ):
+                return False
             return True
 
         if self.mode is ConditionMode.NEGATION:
-            # Negate required pattern: if full required pattern matches, reject
-            if required:
-                full_required_match = True
-                for key, expected in required.items():
-                    if key not in actual_value or norm(actual_value[key]) != expected:
-                        full_required_match = False
-                        break
-                if full_required_match:
-                    return False
-
-            # Forbidden still rejects if any forbidden pair matches
-            for key, forbidden_value in forbidden.items():
-                if key in actual_value and norm(actual_value[key]) == forbidden_value:
-                    return False
-
+            if self.required is not None and _feature_exact_match(
+                actual_value, self.required, bool(self.allow_extra_keys)
+            ):
+                return False
+            if self.forbidden is not None and _feature_any_match(
+                actual_value, self.forbidden, True
+            ):
+                return False
             return True
 
         if self.mode is ConditionMode.MEMBERSHIP:
-            # At least one required pair must match (any-match semantics)
-            if required:
-                any_match = False
-                for key, expected in required.items():
-                    if key not in actual_value:
-                        continue
-                    if norm(actual_value[key]) == expected:
-                        any_match = True
-                        break
-                if not any_match:
-                    return False
-
-            # Forbidden still rejects if any forbidden pair matches
-            for key, forbidden_value in forbidden.items():
-                if key in actual_value and norm(actual_value[key]) == forbidden_value:
-                    return False
-
+            if self.required is not None and not _feature_any_match(
+                actual_value, self.required, True
+            ):
+                return False
+            if self.forbidden is not None and _feature_any_match(
+                actual_value, self.forbidden, True
+            ):
+                return False
             return True
 
         raise ValueError(f"Unsupported mode: {self.mode}")
@@ -376,14 +499,16 @@ class FeatureCondition:
         Return a human-readable explanation of the condition.
         """
         if self.mode is ConditionMode.EXACT:
-            return f"Features must include {self.required!r} and exclude {self.forbidden!r}"
+            return f"Features must match {self.required!r} and avoid {self.forbidden!r}"
         if self.mode is ConditionMode.NEGATION:
-            return f"Features must not simultaneously match all of {self.required!r}; and must not include any of {self.forbidden!r}"
+            return (
+                f"Features must not match {self.required!r}; and must not include {self.forbidden!r}"
+            )
         if self.mode is ConditionMode.MEMBERSHIP:
             parts = []
-            if self.required:
+            if self.required is not None:
                 parts.append(f"at least one of {self.required!r} must be present")
-            if self.forbidden:
+            if self.forbidden is not None:
                 parts.append(f"none of {self.forbidden!r} may be present")
             return (
                 "Features: " + "; and ".join(parts)
@@ -394,21 +519,33 @@ class FeatureCondition:
             return "Features can be any value"
         raise ValueError(f"Unsupported mode: {self.mode}")
 
-    def _validate_or_raise(self) -> None:
+    def _is_missing(self: Self, value: Any) -> bool:
+        """Treat missing markers and empty containers as missing feature structures."""
+        if any(value == marker for marker in self.missing_markers):
+            return True
+        if isinstance(value, Mapping):
+            return len(value) == 0
+        if isinstance(value, (list, tuple, set, frozenset)):
+            return len(value) == 0
+        return False
+
+    def _validate_or_raise(self: Self) -> None:
         """
         Validate constructor arguments with explicit, actionable errors.
         """
         if not isinstance(self.mode, ConditionMode):
             raise TypeError("mode must be ConditionMode.")
 
-        if self.required is not None and not isinstance(self.required, dict):
-            raise TypeError("required must be dict or None.")
-
-        if self.forbidden is not None and not isinstance(self.forbidden, dict):
-            raise TypeError("forbidden must be dict or None.")
-
         if self.normalizer is not None and not callable(self.normalizer):
             raise TypeError("normalizer must be callable or None.")
+
+        if not isinstance(self.missing_markers, tuple):
+            raise TypeError("missing_markers must be a tuple.")
+
+        if self.mode is ConditionMode.WILDCARD:
+            if self.required is not None or self.forbidden is not None:
+                raise ValueError("required/forbidden must be None for WILDCARD mode.")
+            return
 
         if self.mode in (
             ConditionMode.EXACT,
@@ -420,19 +557,16 @@ class FeatureCondition:
                     "Provide required and/or forbidden for EXACT/NEGATION/MEMBERSHIP."
                 )
 
-        if self.mode is ConditionMode.WILDCARD:
-            if self.required is not None or self.forbidden is not None:
-                raise ValueError("required/forbidden must be None for WILDCARD mode.")
-
-        if self.mode is ConditionMode.CONTAINS:
+        if self.mode is ConditionMode.REGEX:
             raise ValueError(
-                "CONTAINS mode is not supported by FeatureCondition. "
-                "CONTAINS is designed for scalar values checked against "
-                "collection-valued attributes (ValueCondition). "
-                "For FeatureCondition, use MEMBERSHIP mode for any-match "
-                "semantics (at least one required pair must match) or "
-                "EXACT mode for all-match semantics (all required pairs must match)."
+                "REGEX mode is a scalar ValueCondition mode and is not supported by FeatureCondition."
             )
+
+        if self.allow_extra_keys is not None and not isinstance(self.allow_extra_keys, bool):
+            raise TypeError("allow_extra_keys must be a boolean value or None.")
+
+        if self.allow_missing is not None and not isinstance(self.allow_missing, bool):
+            raise TypeError("allow_missing must be a boolean value or None.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -469,7 +603,7 @@ class NodeConstraint:
         """
         self._validate_or_raise()
 
-    def matches(self: Self, node_annotation: estnltk.Span) -> bool:
+    def matches(self: Self, node_annotation: Any) -> bool:
         """
         Check whether the given node annotation satisfies this constraint.
 
@@ -507,7 +641,7 @@ class NodeConstraint:
             float: A selectivity score where higher values indicate more selective constraints. The score is calculated based on the number and restrictiveness of the specified conditions. For example, an EXACT ValueCondition is more selective than a NEGATION, and both are more selective than a WILDCARD. Similarly, having multiple conditions (e.g., UPOS, lemma, feats) increases selectivity compared to having only one or none.
         """
         score = 0.0
-        # Exact > Membership ≈ Contains > Negation > Wildcard(0.0) in terms of selectivity
+        # Exact > Membership ≈ Regex > Negation > Wildcard(0.0) in terms of selectivity
         if self.attribute_conditions:
             for cond in self.attribute_conditions.values():
                 if cond.mode == ConditionMode.EXACT:
@@ -516,8 +650,8 @@ class NodeConstraint:
                     score += SELECTIVITY_WEIGHT_MEMBERSHIP
                 elif cond.mode == ConditionMode.NOT_MEMBERSHIP:
                     score += SELECTIVITY_WEIGHT_MEMBERSHIP
-                elif cond.mode == ConditionMode.CONTAINS:
-                    score += SELECTIVITY_WEIGHT_CONTAINS
+                elif cond.mode == ConditionMode.REGEX:
+                    score += SELECTIVITY_WEIGHT_REGEX
                 elif cond.mode == ConditionMode.NEGATION:
                     score += SELECTIVITY_WEIGHT_NEGATION
         if self.feats_condition is not None:
