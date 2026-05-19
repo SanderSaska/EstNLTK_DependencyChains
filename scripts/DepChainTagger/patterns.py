@@ -31,7 +31,7 @@ class PathPattern:
     - **node_steps** (`Tuple[NodeConstraint, ...]`): A tuple of NodeConstraint objects that specify the constraints for each node along the path. The first NodeConstraint corresponds to the starting node (e.g., the "self" node), and subsequent NodeConstraints correspond to nodes reached by traversing edges according to the specified EdgeConstraints.
     - **edge_steps** (`Tuple[EdgeConstraint, ...]`): A tuple of EdgeConstraint objects that specify the constraints for the edges to traverse between the nodes specified in `node_steps`. The length of `edge_steps` should be one less than the length of `node_steps`, as each edge connects two nodes.
     - **anchor_role** (`str`): The role of the anchor node in this path pattern, which serves as the reference point for the path. This is typically the role of the first NodeConstraint in `node_steps`, but it can be specified separately for clarity.
-    - **emit_roles** (`Tuple[str, ...]`): A tuple of roles corresponding to the nodes in `node_steps` that should be included in the emitted features when this pattern matches. This allows for selective feature extraction based on the roles of the nodes in the matched path.
+    - **emit_roles** (`Optional[Tuple[str, ...]]`): Roles corresponding to the nodes in `node_steps` that should be included in the emitted features when this pattern matches. If omitted, all roles defined in `node_steps` are emitted by default.
 
     ## Methods:
     - :func:`~PathPattern.get_node_constraint`: Retrieves the NodeConstraint associated with a given role in this path pattern.
@@ -43,7 +43,7 @@ class PathPattern:
     node_steps: Tuple[NodeConstraint, ...]
     edge_steps: Tuple[EdgeConstraint, ...]
     anchor_role: Optional[str] = None
-    emit_roles: Tuple[str, ...] = field(default_factory=tuple)
+    emit_roles: Optional[Tuple[str, ...]] = None
 
     def __post_init__(self: Self) -> None:
         """
@@ -55,9 +55,13 @@ class PathPattern:
                 raise ValueError("Cannot infer anchor_role: node_steps is empty")
             object.__setattr__(self, "anchor_role", self.node_steps[0].role)
 
-        # Ensure emit_roles has a sensible default (empty tuple handled later in validation)
+        # If emit_roles is omitted, emit every role in node_steps by default.
         if self.emit_roles is None:
-            object.__setattr__(self, "emit_roles", tuple())
+            object.__setattr__(
+                self,
+                "emit_roles",
+                tuple(node_constraint.role for node_constraint in self.node_steps),
+            )
 
         self._validate_or_raise()
 
@@ -148,10 +152,10 @@ class PathPattern:
         if len(valid_roles) != len(roles):
             raise ValueError("Roles defined in node_steps must be unique.")
 
-        if not isinstance(self.emit_roles, tuple) or not all(
+        if self.emit_roles is None or not isinstance(self.emit_roles, tuple) or not all(
             isinstance(role, str) and role.strip() != "" for role in self.emit_roles
         ):
-            raise TypeError("emit_roles must be a tuple of non-empty strings.")
+            raise TypeError("emit_roles must be a tuple of non-empty strings or None.")
 
         emit_roles_list = list(self.emit_roles)
         emit_roles_set = set(self.emit_roles)

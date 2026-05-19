@@ -26,6 +26,18 @@ def test_valuecondition_exact_and_negation() -> None:
     assert not neg.matches("VERB")
 
 
+def test_valuecondition_membership_and_not_membership() -> None:
+    membership = ValueCondition(mode=ConditionMode.MEMBERSHIP, value=("NOUN", "ADJ"))
+    assert membership.matches("NOUN")
+    assert not membership.matches("VERB")
+
+    not_membership = ValueCondition(
+        mode=ConditionMode.NOT_MEMBERSHIP, value=("NOUN", "ADJ")
+    )
+    assert not_membership.matches("VERB")
+    assert not not_membership.matches("NOUN")
+
+
 def test_valuecondition_wildcard_and_missing() -> None:
     wildcard = ValueCondition(mode=ConditionMode.WILDCARD, value=None)
     assert wildcard.matches("anything")
@@ -49,6 +61,8 @@ def test_valuecondition_normalizer_and_constructor_validation() -> None:
         ValueCondition(mode=ConditionMode.EXACT, value=None)
     with pytest.raises(ValueError):
         ValueCondition(mode=ConditionMode.WILDCARD, value="not-none")
+    with pytest.raises(ValueError):
+        ValueCondition(mode=ConditionMode.NOT_MEMBERSHIP, value=None)
     with pytest.raises(TypeError):
         ValueCondition(
             mode=ConditionMode.EXACT, value="NOUN", normalizer="not-callable"

@@ -68,7 +68,12 @@ class ValueCondition:
         if (
             self.normalizer is not None
             and self.value is not None
-            and self.mode not in (ConditionMode.WILDCARD, ConditionMode.MEMBERSHIP)
+            and self.mode
+            not in (
+                ConditionMode.WILDCARD,
+                ConditionMode.MEMBERSHIP,
+                ConditionMode.NOT_MEMBERSHIP,
+            )
         ):
             # dataclass is frozen, so we use object.__setattr__
             object.__setattr__(self, "value", self.normalizer(self.value))
@@ -103,6 +108,8 @@ class ValueCondition:
             return actual_value != self.value
         if self.mode is ConditionMode.MEMBERSHIP:
             return actual_value in self.value
+        if self.mode is ConditionMode.NOT_MEMBERSHIP:
+            return actual_value not in self.value
 
         # Defensive fallback; should be unreachable due to validation.
         raise ValueError(f"Unsupported mode: {self.mode}")
@@ -119,6 +126,8 @@ class ValueCondition:
             return "Value can be any value"
         if self.mode is ConditionMode.MEMBERSHIP:
             return f"Value must be in {self.value!r}"
+        if self.mode is ConditionMode.NOT_MEMBERSHIP:
+            return f"Value must not be in {self.value!r}"
         if self.mode is ConditionMode.CONTAINS:
             return f"Collection must contain {self.value!r}"
         raise ValueError(f"Unsupported mode: {self.mode}")
@@ -197,19 +206,21 @@ class ValueCondition:
         if self.mode is ConditionMode.WILDCARD and self.value is not None:
             raise ValueError("value must be None when mode is WILDCARD.")
 
-        if self.mode is ConditionMode.MEMBERSHIP:
+        if self.mode in (ConditionMode.MEMBERSHIP, ConditionMode.NOT_MEMBERSHIP):
             if self.value is None:
-                raise ValueError("value is required for MEMBERSHIP mode.")
+                raise ValueError(
+                    "value is required for MEMBERSHIP / NOT_MEMBERSHIP mode."
+                )
             # Check if value is iterable (but not string)
             if isinstance(self.value, str):
                 raise TypeError(
-                    "value for MEMBERSHIP mode must be an iterable (list, tuple, set) but not a string."
+                    "value for MEMBERSHIP / NOT_MEMBERSHIP mode must be an iterable (list, tuple, set) but not a string."
                 )
             try:
                 iter(self.value)
             except TypeError:
                 raise TypeError(
-                    f"value for MEMBERSHIP mode must be iterable, got {type(self.value).__name__}."
+                    f"value for MEMBERSHIP / NOT_MEMBERSHIP mode must be iterable, got {type(self.value).__name__}."
                 )
 
         if self.normalizer is not None and not callable(self.normalizer):
@@ -503,6 +514,8 @@ class NodeConstraint:
                     score += SELECTIVITY_WEIGHT_EXACT
                 elif cond.mode == ConditionMode.MEMBERSHIP:
                     score += SELECTIVITY_WEIGHT_MEMBERSHIP
+                elif cond.mode == ConditionMode.NOT_MEMBERSHIP:
+                    score += SELECTIVITY_WEIGHT_MEMBERSHIP
                 elif cond.mode == ConditionMode.CONTAINS:
                     score += SELECTIVITY_WEIGHT_CONTAINS
                 elif cond.mode == ConditionMode.NEGATION:
@@ -511,6 +524,8 @@ class NodeConstraint:
             if self.feats_condition.mode == ConditionMode.EXACT:
                 score += SELECTIVITY_WEIGHT_EXACT
             elif self.feats_condition.mode == ConditionMode.MEMBERSHIP:
+                score += SELECTIVITY_WEIGHT_MEMBERSHIP
+            elif self.feats_condition.mode == ConditionMode.NOT_MEMBERSHIP:
                 score += SELECTIVITY_WEIGHT_MEMBERSHIP
             elif self.feats_condition.mode == ConditionMode.NEGATION:
                 score += SELECTIVITY_WEIGHT_NEGATION
@@ -747,4 +762,3 @@ class EdgeConstraint:
             and self.min_hops > self.max_hops
         ):
             raise ValueError("min_hops cannot be greater than max_hops.")
-

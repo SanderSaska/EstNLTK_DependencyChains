@@ -92,6 +92,21 @@ def test_pathpattern_basic_api(simple_pattern):
     assert "Pattern name: noun_to_adj" in desc
 
 
+def test_pathpattern_default_emit_roles():
+    src = NodeConstraint(role="source")
+    tgt = NodeConstraint(role="target")
+    e = EdgeConstraint(direction=DirectionMode.UP, attribute_conditions={})
+
+    pattern = PathPattern(
+        name="default_emit_roles",
+        node_steps=(src, tgt),
+        edge_steps=(e,),
+        anchor_role="source",
+    )
+
+    assert pattern.emit_roles == ("source", "target")
+
+
 def test_pathpattern_validation_errors():
     src = NodeConstraint(role="source")
     tgt = NodeConstraint(role="target")

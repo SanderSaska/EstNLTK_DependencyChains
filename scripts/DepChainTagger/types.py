@@ -20,6 +20,8 @@ class ConditionMode(str, Enum):
     - **WILDCARD**: Match any value (expected value is ignored, must be None).
     - **MEMBERSHIP**: Match when the actual (scalar) value is in the expected iterable
       of condition values.  The *condition* holds a collection; the *attribute* is scalar.
+    - **NOT_MEMBERSHIP**: Match when the actual (scalar) value is not in the expected
+      iterable of condition values.  This is the logical inverse of MEMBERSHIP.
     - **CONTAINS**: Match when the expected (scalar) condition value is found among the
       elements or keys of a collection-valued attribute.  This is the logical reverse of
       MEMBERSHIP: the *attribute* holds a collection; the *condition* is scalar.
@@ -35,6 +37,7 @@ class ConditionMode(str, Enum):
     NEGATION = "negation"  # Match when actual value is not equal to expected value
     WILDCARD = "wildcard"  # Match any value (expected value is ignored, must be None)
     MEMBERSHIP = "membership"  # Match when actual value is in the expected iterable (list, tuple, set, etc.)
+    NOT_MEMBERSHIP = "not_membership"  # Match when actual value is not in the expected iterable (list, tuple, set, etc.)
     CONTAINS = "contains"  # Match when the expected value is found among the elements/keys of a collection-valued attribute
 
 
