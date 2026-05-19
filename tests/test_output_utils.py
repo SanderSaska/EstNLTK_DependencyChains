@@ -1,0 +1,128 @@
+from scripts.DepChainTagger.conditions import (
+    EdgeConstraint,
+    NodeConstraint,
+    ValueCondition,
+)
+from scripts.DepChainTagger.child_tagger import DepChildTagger
+from scripts.DepChainTagger.tagger import DepChainTagger
+from scripts.DepChainTagger.output_utils import (
+    build_match_annotation_payload,
+    collect_output_attribute_names,
+    collect_role_span_names,
+)
+from scripts.DepChainTagger.patterns import ChainMatch, PathPattern
+from scripts.DepChainTagger.types import ConditionMode, DirectionMode, EdgeContext
+import estnltk
+
+
+def build_pattern() -> PathPattern:
+    """Build a tiny pattern with one node condition and one edge condition."""
+    anchor = NodeConstraint(
+        role="anchor",
+        attribute_conditions={"text": ValueCondition(ConditionMode.EXACT, "suvel")},
+    )
+    child = NodeConstraint(role="s")
+    edge = EdgeConstraint(
+        direction=DirectionMode.UP,
+        attribute_conditions={"deprel": ValueCondition(ConditionMode.EXACT, "nmod")},
+        min_hops=1,
+        max_hops=1,
+    )
+    return PathPattern(
+        name="season",
+        node_steps=(anchor, child),
+        edge_steps=(edge,),
+        anchor_role="anchor",
+        emit_roles=("anchor", "s"),
+    )
+
+
+def test_collect_schema_fields() -> None:
+    """The schema should expose role spans first and flattened metadata fields after."""
+    pattern = build_pattern()
+
+    assert collect_role_span_names((pattern,)) == ("anchor", "s")
+    assert collect_output_attribute_names((pattern,)) == (
+        "pattern_name",
+        "matched_text",
+        "anchor_text",
+        "anchor_direction",
+        "anchor_min_hops",
+        "anchor_max_hops",
+        "anchor_deprel",
+    )
+
+
+def test_build_match_annotation_payload() -> None:
+    """A match should become one relation row with role spans and flattened metadata."""
+    pattern = build_pattern()
+    text_obj = estnltk.Text("1990. aasta kuumal suvel")
+    text_obj.tag_layer("words")
+    child = text_obj.words[1]
+    anchor = text_obj.words[3]
+    match = ChainMatch(
+        pattern_name="season",
+        sentence_index=0,
+        sentence_span=(0, len(text_obj.text)),
+        role_to_token_id={"anchor": 3, "s": 1},
+        role_to_node={"anchor": anchor, "s": child},
+        traversed_edges=(
+            (
+                "anchor",
+                "s",
+                EdgeContext(
+                    direction=DirectionMode.UP,
+                    deprel="nmod",
+                    hops=1,
+                    crosses_sentence=False,
+                ),
+            ),
+        ),
+        matched_text="suvel aasta",
+        metadata={},
+    )
+
+    payload = build_match_annotation_payload(
+        match=match,
+        patterns_by_name={pattern.name: pattern},
+        span_names=("anchor", "s"),
+    )
+
+    assert payload["anchor"] == (19, 24)
+    assert payload["s"] == (6, 11)
+    assert payload["pattern_name"] == "season"
+    assert payload["matched_text"] == "suvel aasta"
+    assert payload["anchor_text"] == "suvel"
+    assert payload["anchor_min_hops"] == 1
+    assert payload["anchor_max_hops"] == 1
+    assert payload["anchor_direction"] == "up"
+    assert payload["anchor_deprel"] == "nmod"
+
+
+def test_tagger_constructors_use_schema_helpers() -> None:
+    """Both taggers should expose the same row-per-match output schema."""
+    chain_pattern = build_pattern()
+    child_pattern = PathPattern(
+        name="child_season",
+        node_steps=chain_pattern.node_steps,
+        edge_steps=(
+            EdgeConstraint(
+                direction=DirectionMode.DOWN,
+                attribute_conditions={
+                    "deprel": ValueCondition(ConditionMode.EXACT, "nmod")
+                },
+                min_hops=1,
+                max_hops=1,
+            ),
+        ),
+        anchor_role="anchor",
+        emit_roles=("anchor", "s"),
+    )
+
+    chain_tagger = DepChainTagger(patterns=(chain_pattern,))
+    child_tagger = DepChildTagger(patterns=(child_pattern,))
+
+    assert chain_tagger.output_span_names == ("anchor", "s")
+    assert child_tagger.output_span_names == ("anchor", "s")
+    assert chain_tagger.output_attributes[:2] == ("pattern_name", "matched_text")
+    assert child_tagger.output_attributes[:2] == ("pattern_name", "matched_text")

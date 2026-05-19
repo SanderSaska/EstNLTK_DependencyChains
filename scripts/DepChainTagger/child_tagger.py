@@ -17,19 +17,21 @@ from estnltk_core import RelationLayer
 
 from .child_matcher import DepChildMatcher
 from .config import (
-    DEFAULT_ANCHOR_ROLE,
     DEFAULT_DEDUP_MODE_GLOBAL,
     DEFAULT_DEDUP_MODE_SENTENCE,
     DEFAULT_MAX_MATCHES_PER_SENTENCE,
     DEFAULT_MAX_TOTAL_MATCHES,
-    DEFAULT_OUTPUT_ATTRIBUTES,
     DEFAULT_OUTPUT_LAYER_NAME,
-    DEFAULT_OUTPUT_SPAN_NAMES,
     DEFAULT_SENTENCES_LAYER_NAME,
     DEFAULT_SYNTAX_LAYER_NAME,
 )
 from .orchestrator import DepTaggerOrchestrator
 from .patterns import PathPattern
+from scripts.DepChainTagger.output_utils import (
+    build_match_annotation_payload,
+    collect_output_attribute_names,
+    collect_role_span_names,
+)
 from .types import DirectionMode
 
 
@@ -89,11 +91,11 @@ class DepChildTagger(RelationTagger):
 
         self.input_layers = (DEFAULT_SYNTAX_LAYER_NAME, DEFAULT_SENTENCES_LAYER_NAME)
         self.output_layer = output_layer
-        self.output_span_names = DEFAULT_OUTPUT_SPAN_NAMES
+        self.output_span_names = collect_role_span_names(patterns)
         self.output_attributes = (
             output_attributes
             if output_attributes is not None
-            else DEFAULT_OUTPUT_ATTRIBUTES
+            else collect_output_attribute_names(patterns)
         )
 
         self._depchild_tagger = DepTaggerOrchestrator(
@@ -205,62 +207,13 @@ class DepChildTagger(RelationTagger):
         return layer
 
     def _add_match_to_layer(self: Self, layer: Any, match: Any) -> None:
-        """Add one matched relation and one annotation per matched token."""
-        pattern = self._pattern_by_name.get(match.pattern_name)
-        emit_roles = (
-            tuple(pattern.emit_roles)
-            if pattern and pattern.emit_roles
-            else tuple(match.role_to_node.keys())
+        """Add one matched relation row for the whole pattern match."""
+        if match.pattern_name not in self._pattern_by_name:
+            raise KeyError(f"Unknown pattern name: {match.pattern_name!r}")
+
+        annotation_payload = build_match_annotation_payload(
+            match=match,
+            patterns_by_name=self._pattern_by_name,
+            span_names=self.output_span_names,
         )
-
-        anchor_role = (
-            pattern.anchor_role
-            if pattern and pattern.anchor_role in match.role_to_node
-            else None
-        )
-        if anchor_role is None:
-            anchor_role = (
-                DEFAULT_ANCHOR_ROLE
-                if DEFAULT_ANCHOR_ROLE in match.role_to_node
-                else next(iter(match.role_to_token_id.keys()), None)
-            )
-
-        nodes = [
-            match.role_to_node[role]
-            for role in emit_roles
-            if role in match.role_to_node
-        ]
-        if not nodes:
-            return
-
-        token_spans: Dict[str, Tuple[int, int]] = {}
-        for role in emit_roles:
-            node = match.role_to_node.get(role)
-            if node is None:
-                continue
-            start = getattr(node, "start", None)
-            end = getattr(node, "end", None)
-            if start is None or end is None:
-                raise ValueError(
-                    f"Cannot add relation span for role {role!r}: node is missing start/end offsets."
-                )
-            token_spans[role] = (int(start), int(end))
-
-        for role in emit_roles:
-            node = match.role_to_node.get(role)
-            if node is None:
-                continue
-            token_span = token_spans.get(role)
-            annotation_payload: Dict[str, Any] = {
-                "text": token_span,
-                "pattern_name": match.pattern_name,
-                "matched_text": getattr(match, "matched_text", None),
-                "upostag": getattr(node, "upostag", None),
-                "xpostag": getattr(node, "xpostag", None),
-                "feats": getattr(node, "feats", None),
-                "lemma": getattr(node, "lemma", None),
-                "deprel": getattr(node, "deprel", None),
-                "role": role,
-                "is_anchor": role == anchor_role,
-            }
-            layer.add_annotation(annotation_payload)
+        layer.add_annotation(annotation_payload)

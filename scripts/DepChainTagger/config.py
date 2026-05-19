@@ -108,7 +108,7 @@ DEFAULT_OUTPUT_LAYER_NAME: str = "dep_chains"
 DEFAULT_OUTPUT_ATTRIBUTES: tuple = (
     "pattern_name",
     "matched_text",
-  # "text",
+    # "text",
     "upostag",
     "xpostag",
     "feats",

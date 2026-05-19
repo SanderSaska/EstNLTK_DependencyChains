@@ -16,21 +16,16 @@ from estnltk.taggers import RelationTagger
 from estnltk_core import RelationLayer
 
 from .config import (
-    DEFAULT_ANCHOR_ROLE,
     DEFAULT_DEDUP_MODE_GLOBAL,
     DEFAULT_DEDUP_MODE_SENTENCE,
     DEFAULT_MAX_MATCHES_PER_SENTENCE,
     DEFAULT_MAX_TOTAL_MATCHES,
-    DEFAULT_OUTPUT_ATTRIBUTES,
     DEFAULT_OUTPUT_LAYER_NAME,
-    DEFAULT_OUTPUT_SPAN_NAMES,
     DEFAULT_SENTENCES_LAYER_NAME,
     DEFAULT_SYNTAX_LAYER_NAME,
 )
 from .orchestrator import DepTaggerOrchestrator
 from .patterns import PathPattern
-
-# TODO: Refactor the output layer layout and annotation payload. Currently we emit one annotation per role with token-level attributes. The output layer span name is text which means that each word in the match might hold all the matches related to that word, which brings some redundancy and duplicates. What we could do instead is to emit one annotation per match, output span names would be the role names defined in the pattern. The annotation payload would then contain the pattern conditions for each role, and the span of the annotation would be the role span.
 
 
 def _deterministic_hash(items: Tuple[Any, ...]) -> str:
@@ -47,6 +42,146 @@ def _make_identifier(value: str) -> str:
     if ident[0].isdigit():
         ident = f"_{ident}"
     return ident
+
+
+def _append_unique(values: List[str], seen: set[str], item: str) -> None:
+    """Append a string once while preserving first-seen order."""
+    if item in seen:
+        return
+    seen.add(item)
+    values.append(item)
+
+
+def _collect_role_span_names(patterns: Tuple[PathPattern, ...]) -> Tuple[str, ...]:
+    """Collect unique role names across all patterns in first-seen order."""
+    span_names: List[str] = []
+    seen: set[str] = set()
+    for pattern in patterns:
+        for node_constraint in pattern.node_steps:
+            _append_unique(span_names, seen, node_constraint.role)
+    return tuple(span_names)
+
+
+def _collect_output_attribute_names(patterns: Tuple[PathPattern, ...]) -> Tuple[str, ...]:
+    """Collect the flattened metadata fields needed to render all patterns."""
+    attribute_names: List[str] = ["pattern_name", "matched_text"]
+    seen: set[str] = set(attribute_names)
+
+    for pattern in patterns:
+        for node_constraint in pattern.node_steps:
+            prefix = f"{node_constraint.role}_"
+            if node_constraint.attribute_conditions:
+                for attr_name in node_constraint.attribute_conditions:
+                    _append_unique(attribute_names, seen, f"{prefix}{attr_name}")
+            if node_constraint.feats_condition is not None:
+                _append_unique(attribute_names, seen, f"{prefix}feats")
+            if node_constraint.extra_predicates:
+                _append_unique(attribute_names, seen, f"{prefix}extra_predicates")
+
+        for index, edge_constraint in enumerate(pattern.edge_steps):
+            source_role = pattern.node_steps[index].role
+            _append_unique(attribute_names, seen, f"{source_role}_direction")
+            _append_unique(attribute_names, seen, f"{source_role}_min_hops")
+            _append_unique(attribute_names, seen, f"{source_role}_max_hops")
+            if edge_constraint.attribute_conditions:
+                for attr_name in edge_constraint.attribute_conditions:
+                    _append_unique(attribute_names, seen, f"{source_role}_{attr_name}")
+
+    return tuple(attribute_names)
+
+
+def _build_match_annotation_payload(
+    match: Any,
+    patterns_by_name: Dict[str, PathPattern],
+    span_names: Tuple[str, ...],
+) -> Dict[str, Any]:
+    """Build one relation-layer annotation per match."""
+    pattern = patterns_by_name.get(match.pattern_name)
+    if pattern is None:
+        raise KeyError(f"Unknown pattern name: {match.pattern_name!r}")
+
+    payload: Dict[str, Any] = {role: None for role in span_names}
+    payload["pattern_name"] = match.pattern_name
+    payload["matched_text"] = getattr(match, "matched_text", None)
+
+    for role in span_names:
+        node = match.role_to_node.get(role)
+        if node is None:
+            continue
+        start = getattr(node, "start", None)
+        end = getattr(node, "end", None)
+        if start is None or end is None:
+            raise ValueError(
+                f"Cannot add relation span for role {role!r}: node is missing start/end offsets."
+            )
+        payload[role] = (int(start), int(end))
+
+    for node_constraint in pattern.node_steps:
+        prefix = f"{node_constraint.role}_"
+        if node_constraint.attribute_conditions:
+            for attr_name, condition in node_constraint.attribute_conditions.items():
+                if condition.mode is not None and condition.mode.name == "WILDCARD":
+                    continue
+                if (
+                    condition.mode.name == "EXACT"
+                    and condition.allow_missing is False
+                    and condition.normalizer is None
+                    and condition.missing_markers == (None, "", "_")
+                ):
+                    payload[f"{prefix}{attr_name}"] = condition.value
+                else:
+                    payload[f"{prefix}{attr_name}"] = {
+                        "mode": condition.mode.value,
+                        "value": condition.value,
+                        "allow_missing": condition.allow_missing,
+                        "missing_markers": condition.missing_markers,
+                        "normalizer": getattr(condition.normalizer, "__name__", None),
+                    }
+
+        if node_constraint.feats_condition is not None:
+            feats_condition = node_constraint.feats_condition
+            payload[f"{prefix}feats"] = {
+                "mode": feats_condition.mode.value,
+                "required": feats_condition.required,
+                "forbidden": feats_condition.forbidden,
+                "allow_extra_keys": feats_condition.allow_extra_keys,
+                "allow_missing": feats_condition.allow_missing,
+                "missing_markers": feats_condition.missing_markers,
+                "normalizer": getattr(feats_condition.normalizer, "__name__", None),
+            }
+
+        if node_constraint.extra_predicates:
+            payload[f"{prefix}extra_predicates"] = tuple(
+                getattr(predicate, "__name__", repr(predicate))
+                for predicate in node_constraint.extra_predicates
+            )
+
+    for index, edge_constraint in enumerate(pattern.edge_steps):
+        source_role = pattern.node_steps[index].role
+        payload[f"{source_role}_direction"] = edge_constraint.direction.value
+        payload[f"{source_role}_min_hops"] = edge_constraint.min_hops
+        payload[f"{source_role}_max_hops"] = edge_constraint.max_hops
+        if edge_constraint.attribute_conditions:
+            for attr_name, condition in edge_constraint.attribute_conditions.items():
+                if condition.mode.name == "WILDCARD":
+                    continue
+                if (
+                    condition.mode.name == "EXACT"
+                    and condition.allow_missing is False
+                    and condition.normalizer is None
+                    and condition.missing_markers == (None, "", "_")
+                ):
+                    payload[f"{source_role}_{attr_name}"] = condition.value
+                else:
+                    payload[f"{source_role}_{attr_name}"] = {
+                        "mode": condition.mode.value,
+                        "value": condition.value,
+                        "allow_missing": condition.allow_missing,
+                        "missing_markers": condition.missing_markers,
+                        "normalizer": getattr(condition.normalizer, "__name__", None),
+                    }
+
+    return payload
 
 
 class DepChainTagger(RelationTagger):
@@ -88,36 +223,12 @@ class DepChainTagger(RelationTagger):
 
         self.input_layers = (DEFAULT_SYNTAX_LAYER_NAME, DEFAULT_SENTENCES_LAYER_NAME)
         self.output_layer = output_layer
-
-        # Use pattern names (sanitised) as the relation's span names. Also
-        # collect all roles across patterns so they can be emitted as
-        # attributes carrying token span tuples.
-        # self._pattern_span_name_by_pattern: Dict[str, str] = {}
-        # pattern_span_names: List[str] = []
-        # seen_pattern_spans: set[str] = set()
-
-        # all_roles: set[str] = set()
-        # for pattern in patterns:
-        #     span_name = _make_identifier(pattern.name)
-        #     # Avoid collisions in sanitised names
-        #     if span_name in seen_pattern_spans:
-        #         suffix = 2
-        #         candidate = f"{span_name}_{suffix}"
-        #         while candidate in seen_pattern_spans:
-        #             suffix += 1
-        #             candidate = f"{span_name}_{suffix}"
-        #         span_name = candidate
-        #     seen_pattern_spans.add(span_name)
-        #     pattern_span_names.append(span_name)
-        #     self._pattern_span_name_by_pattern[pattern.name] = span_name
-
-        #     for node_constraint in pattern.node_steps:
-        #         all_roles.add(node_constraint.role)
-
-        # self.output_span_names = tuple(pattern_span_names)
-        self.output_span_names = DEFAULT_OUTPUT_SPAN_NAMES
-
-        self.output_attributes = DEFAULT_OUTPUT_ATTRIBUTES
+        self.output_span_names = _collect_role_span_names(patterns)
+        self.output_attributes = (
+            output_attributes
+            if output_attributes is not None
+            else _collect_output_attribute_names(patterns)
+        )
 
         self._depchain_tagger = DepTaggerOrchestrator(
             patterns=patterns,
@@ -146,7 +257,6 @@ class DepChainTagger(RelationTagger):
             span_names=self.output_span_names,
             attributes=self.output_attributes,
             display_order=tuple(self.output_span_names) + tuple(self.output_attributes),
-            # display_order=tuple(self.output_attributes),
             text_object=None,
             ambiguous=True,
         )
@@ -216,81 +326,13 @@ class DepChainTagger(RelationTagger):
         return layer
 
     def _add_match_to_layer(self: Self, layer: Any, match: Any) -> None:
-        """Add one matched relation and one annotation per matched token."""
-        pattern = self._pattern_by_name.get(match.pattern_name)
-        emit_roles = (
-            tuple(pattern.emit_roles)
-            if pattern and pattern.emit_roles
-            else tuple(match.role_to_node.keys())
+        """Add one matched relation row for the whole pattern match."""
+        if match.pattern_name not in self._pattern_by_name:
+            raise KeyError(f"Unknown pattern name: {match.pattern_name!r}")
+
+        annotation_payload = _build_match_annotation_payload(
+            match=match,
+            patterns_by_name=self._pattern_by_name,
+            span_names=self.output_span_names,
         )
-
-        anchor_role = (
-            pattern.anchor_role
-            if pattern and pattern.anchor_role in match.role_to_node
-            else None
-        )
-        if anchor_role is None:
-            anchor_role = (
-                DEFAULT_ANCHOR_ROLE
-                if DEFAULT_ANCHOR_ROLE in match.role_to_node
-                else next(iter(match.role_to_token_id.keys()), None)
-            )
-
-        # match_id = f"{match.sentence_index}:{match.pattern_name}:{_deterministic_hash(tuple(sorted(match.role_to_token_id.items())))}"
-
-        nodes = [
-            match.role_to_node[role]
-            for role in emit_roles
-            if role in match.role_to_node
-        ]
-        if not nodes:
-            return
-
-        # Determine match envelope span (used for the pattern-named relation span)
-        # match_start = min(getattr(node, "start", 0) for node in nodes)
-        # match_end = max(getattr(node, "end", match_start) for node in nodes)
-
-        # Build named spans (role -> (start,end)) for the relation
-        token_spans: Dict[str, Tuple[int, int]] = {}
-        for role in emit_roles:
-            node = match.role_to_node.get(role)
-            if node is None:
-                continue
-            start = getattr(node, "start", None)
-            end = getattr(node, "end", None)
-            if start is None or end is None:
-                raise ValueError(
-                    f"Cannot add relation span for role {role!r}: node is missing start/end offsets."
-                )
-            token_spans[role] = (int(start), int(end))
-
-        # Emit one annotation per role so token-level attributes are preserved
-        for role in emit_roles:
-            node = match.role_to_node.get(role)
-            if node is None:
-                continue
-            # Add the pattern-level named span (pattern-specific span name)
-            # pattern_span_name = self._pattern_span_name_by_pattern.get(
-            #     match.pattern_name
-            # )
-            # pattern_span_key = (
-            #     pattern_span_name
-            #     if pattern_span_name is not None
-            #     else _make_identifier(match.pattern_name)
-            # )
-            token_span = token_spans.get(role)
-            annotation_payload: Dict[str, Any] = {
-                "text": token_span,
-                # pattern_span_key: (match_start, match_end),
-                "pattern_name": match.pattern_name,
-                "matched_text": getattr(match, "matched_text", None),
-                "upostag": getattr(node, "upostag", None),
-                "xpostag": getattr(node, "xpostag", None),
-                "feats": getattr(node, "feats", None),
-                "lemma": getattr(node, "lemma", None),
-                "deprel": getattr(node, "deprel", None),
-                "role": role,
-                "is_anchor": role == anchor_role,
-                # "match_id": match_id,
-            }
-            layer.add_annotation(annotation_payload)
+        layer.add_annotation(annotation_payload)

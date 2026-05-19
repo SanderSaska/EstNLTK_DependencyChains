@@ -27,6 +27,11 @@ from .conditions import ValueCondition, FeatureCondition, NodeConstraint, EdgeCo
 from .patterns import PathPattern, ChainMatch, MatchCollector
 from .matcher import DepChainMatcher
 from .decorator import PhraseDecorator
+from .output_utils import (
+    build_match_annotation_payload,
+    collect_output_attribute_names,
+    collect_role_span_names,
+)
 from .orchestrator import DepTaggerOrchestrator
 from .tagger import DepChainTagger
 from .child_matcher import DepChildMatcher
@@ -68,6 +73,9 @@ __all__ = [
     "MatchCollector",
     "DepChainMatcher",
     "PhraseDecorator",
+    "build_match_annotation_payload",
+    "collect_output_attribute_names",
+    "collect_role_span_names",
     "DepTaggerOrchestrator",
     "DepChainTagger",
     "DepChildMatcher",
