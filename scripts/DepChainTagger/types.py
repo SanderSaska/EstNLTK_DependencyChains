@@ -39,6 +39,8 @@ class ConditionMode(str, Enum):
     MEMBERSHIP = "membership"  # Match when actual value is in the expected iterable (list, tuple, set, etc.)
     NOT_MEMBERSHIP = "not_membership"  # Match when actual value is not in the expected iterable (list, tuple, set, etc.)
     CONTAINS = "contains"  # Match when the expected value is found among the elements/keys of a collection-valued attribute
+    # TODO: Regex matching mode could be added in the future if needed
+    # TODO: Feats can be structured as dicts or strings, so we need to handle both cases in conditions.
 
 
 class DirectionMode(str, Enum):
