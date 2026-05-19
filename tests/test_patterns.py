@@ -84,6 +84,7 @@ def simple_pattern():
 
 def test_pathpattern_basic_api(simple_pattern):
     pattern = simple_pattern
+    # Check: basic PathPattern API (name, node/edge accessors, describe)
     assert pattern.name == "noun_to_adj"
     assert pattern.get_node_constraint("source") is not None
     assert pattern.get_node_constraint("missing") is None
@@ -104,6 +105,7 @@ def test_pathpattern_default_emit_roles():
         anchor_role="source",
     )
 
+    # Check: default emit_roles fallback when not provided
     assert pattern.emit_roles == ("source", "target")
 
 
@@ -111,6 +113,7 @@ def test_pathpattern_validation_errors():
     src = NodeConstraint(role="source")
     tgt = NodeConstraint(role="target")
     e = EdgeConstraint(direction=DirectionMode.UP, attribute_conditions={})
+    # Check: invalid path/edge lengths and duplicate roles raise
     with pytest.raises(ValueError):
         PathPattern(
             name="bad_length",
@@ -146,6 +149,7 @@ def test_chainmatch_and_to_output(nodes):
         metadata={"c": 1},
     )
 
+    # Check: ChainMatch accessors, roles and output row generation
     assert match.get_node("source").text == node_3.text
     assert match.get_token_id("target") == 4
     assert match.get_roles() == {"source", "target"}
@@ -194,41 +198,50 @@ def test_matchcollector_behaviour(nodes, sample_graph):
         "p2", span, 5, 6, node_5, node_6, f"{node_5.text} {node_6.text}"
     )
 
+    # Check: 'none' dedup allows identical matches and counts accurately
     c_none = MatchCollector(dedup_mode="none", max_matches=10)
     assert c_none.add(m1)
     assert c_none.add(m1)
     assert c_none.count() == 2
 
+    # Check: 'exact' dedup rejects identical matches
     c_exact = MatchCollector(dedup_mode="exact", max_matches=10)
     assert c_exact.add(m1)
     assert not c_exact.add(m1)
     assert c_exact.count() == 1
 
+    # Check: 'role_based' dedup treats same role mapping as duplicate
     c_role = MatchCollector(dedup_mode="role_based", max_matches=10)
     assert c_role.add(m1)
     assert not c_role.add(m1_var)
     assert c_role.add(m2)
     assert c_role.count() == 2
 
+    # Check: extend returns number of actually added matches respecting dedup
     c_ext = MatchCollector(dedup_mode="role_based", max_matches=10)
     added = c_ext.extend([m1, m1_var, m2])
     assert added == 2
 
+    # Check: max_matches enforces capacity cap
     c_cap = MatchCollector(dedup_mode="none", max_matches=1)
     assert c_cap.add(m1)
     assert not c_cap.add(m2)
 
+    # Check: summary reports totals and per-pattern counts
     summary = c_role.summary()
     assert summary["total"] == 2
     assert summary["pattern::p1"] == 1
     assert summary["pattern::p2"] == 1
 
+    # Check: to_output_rows converts stored matches to list-of-rows
     rows = c_role.to_output_rows()
     assert len(rows) == 2
 
+    # Check: clear empties the collector
     c_role.clear()
     assert c_role.count() == 0
 
+    # Check: invalid constructor args raise appropriate exceptions
     with pytest.raises(ValueError):
         MatchCollector(dedup_mode="invalid")
     with pytest.raises(ValueError):

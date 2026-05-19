@@ -67,6 +67,7 @@ def test_match_pattern_in_sentence_basic(sample_graph):
     matches = matcher.match_pattern_in_sentence(
         pattern=base_pattern, graph_index=sample_graph, sentence_index=0
     )
+    # Check: at least one match found and roles present in first match
     assert len(matches) >= 1
     first = matches[0]
     assert "parent" in first.role_to_token_id and "child" in first.role_to_token_id
@@ -81,6 +82,7 @@ def test_sentence_span_override(sample_graph):
         sentence_index=0,
         sentence_span=(999, 1001),
     )
+    # Check: override of sentence_span is preserved in returned matches
     assert len(overridden) >= 1
     assert overridden[0].sentence_span == (999, 1001)
 
@@ -90,6 +92,7 @@ def test_match_sentence_aggregates(sample_graph):
     p2 = build_simple_pattern("p2")
     matcher = DepChainMatcher(patterns=(p1, p2), dedup_mode="none")
     results = matcher.match_sentence(graph_index=sample_graph, sentence_index=0)
+    # Check: match_sentence aggregates results from multiple patterns
     assert len(results) >= 1
 
 
@@ -100,6 +103,7 @@ def test_dedup_modes(sample_graph):
 
     m_role = DepChainMatcher(patterns=(p, p), dedup_mode="role_based")
     role_matches = m_role.match_sentence(graph_index=sample_graph, sentence_index=0)
+    # Check: role-based dedup reduces or equals the number of matches
     assert len(role_matches) <= len(none_matches)
 
 
@@ -138,11 +142,13 @@ def test_allow_role_node_overlap(sample_graph):
     m_yes = DepChainMatcher(patterns=(same_node_pattern,), allow_role_node_overlap=True)
     yes_matches = m_yes.match_sentence(graph_index=sample_graph, sentence_index=0)
 
+    # Check: allowing role/node overlap yields at least as many matches
     assert len(yes_matches) >= len(no_matches)
 
 
 def test_constructor_validation():
     p = build_simple_pattern("p")
+    # Check: constructor parameter validation
     with pytest.raises(TypeError):
         DepChainMatcher(patterns=[p])
     with pytest.raises(ValueError):

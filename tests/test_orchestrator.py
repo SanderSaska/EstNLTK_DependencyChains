@@ -68,6 +68,7 @@ def test_constructor_sets_defaults():
         max_matches_per_sentence=100,
         allow_role_node_overlap=False,
     )
+    # Check: orchestrator builds a matcher and decorator with sensible defaults
     assert orchestrator.matcher is not None
     assert orchestrator.decorator is not None
     assert isinstance(orchestrator.matcher, DepChainMatcher)
@@ -86,6 +87,7 @@ def test_tag_sentence_layer_and_layers(sample_layers_and_spans):
     matches = orchestrator.tag_sentence_layer(
         sentence_syntax_layer=layers[0], sentence_index=0, sentence_span=spans[0]
     )
+    # Check: tag_sentence_layer returns a list of ChainMatch objects when present
     assert isinstance(matches, list)
     if matches:
         assert all(isinstance(m, ChainMatch) for m in matches)
@@ -93,6 +95,7 @@ def test_tag_sentence_layer_and_layers(sample_layers_and_spans):
     all_matches = orchestrator.tag_sentence_layers(
         sentence_syntax_layers=layers, sentence_spans=spans
     )
+    # Check: tag_sentence_layers returns an aggregate list
     assert isinstance(all_matches, list)
 
 
@@ -106,6 +109,7 @@ def test_decorate_and_full_pipeline(sample_layers_and_spans):
     matches = orchestrator.tag_sentence_layers(
         sentence_syntax_layers=layers, sentence_spans=spans
     )
+    # Check: decorator produces list of dicts for matched results
     if matches:
         decorated = orchestrator.decorate_matches(matches)
         assert isinstance(decorated, list)
@@ -115,6 +119,7 @@ def test_decorate_and_full_pipeline(sample_layers_and_spans):
     decorated_all = orchestrator.tag_and_decorate_sentence_layers(
         sentence_syntax_layers=layers, sentence_spans=spans
     )
+    # Check: combined tag-and-decorate pipeline returns a list
     assert isinstance(decorated_all, list)
 
 
@@ -139,6 +144,7 @@ def test_global_dedup_and_capping(sample_layers_and_spans):
     matches_role = orch_role.tag_sentence_layers(
         sentence_syntax_layers=layers, sentence_spans=spans
     )
+    # Check: global role-based dedup reduces or equals match count
     assert len(matches_role) <= len(matches_none)
 
     orch_capped = DepTaggerOrchestrator(
@@ -147,14 +153,17 @@ def test_global_dedup_and_capping(sample_layers_and_spans):
     capped = orch_capped.tag_sentence_layers(
         sentence_syntax_layers=layers, sentence_spans=spans
     )
+    # Check: max_total_matches caps the total number of matches
     assert len(capped) <= 1
 
 
 def test_constructor_validation_and_span_alignment(sample_layers_and_spans):
     layers, spans = sample_layers_and_spans
     base_pattern = build_wildcard_pattern("base_p")
+    # Check: constructor enforces tuple type for patterns
     with pytest.raises(TypeError):
         DepTaggerOrchestrator(patterns=[base_pattern])
+    # Check: invalid dedup modes raise ValueError
     with pytest.raises(ValueError):
         DepTaggerOrchestrator(
             patterns=(base_pattern,), sentence_match_dedup_mode="invalid"
@@ -168,6 +177,7 @@ def test_constructor_validation_and_span_alignment(sample_layers_and_spans):
     with pytest.raises(TypeError):
         DepTaggerOrchestrator(patterns=(base_pattern,), allow_role_node_overlap="no")
 
+    # Check: span alignment validation raises when lengths differ
     orch = DepTaggerOrchestrator(patterns=(base_pattern,))
     with pytest.raises(ValueError):
         orch.tag_sentence_layers(

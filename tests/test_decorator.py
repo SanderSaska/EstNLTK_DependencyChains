@@ -54,11 +54,14 @@ def test_decorate_single_match_fields(sample_nodes):
     dec = PhraseDecorator()
     row = dec.decorate_match(match)
 
+    # Check: decorated row contains expected pattern metadata and role fields
     assert row["pattern_name"] == "testpat"
     assert row["sentence_index"] == 0
     assert row["matched_text"] == "lendurist abikaasale"
+    # Check: token ids and text mapping for roles
     assert row["role_to_token_id"]["source"] == 3
     assert row["role_to_text"]["target"] == "abikaasale"
+    # Check: span mapping and traversed edges structure
     assert row["role_to_span"]["source"] == (9, 18)
     assert isinstance(row["traversed_edges"], list)
     assert row["metadata"]["k"] == "v"
@@ -71,9 +74,11 @@ def test_decorate_matches_and_collector(sample_nodes):
 
     dec = PhraseDecorator(output_field_prefix="x_")
     rows = dec.decorate_matches([m1, m2])
+    # Check: multiple matches decorated and prefixed output field present
     assert len(rows) == 2
     assert "x_pattern_name" in rows[0]
 
+    # Check: decorator can consume a MatchCollector and produce rows
     coll = MatchCollector(dedup_mode="none", max_matches=10)
     coll.add(m1)
     coll.add(m2)
@@ -91,6 +96,7 @@ def test_output_text_roles_and_flags(sample_nodes):
         output_text_roles=("target",),
     )
     row = dec.decorate_match(match)
+    # Check: flags control which fields appear and matched_text can be limited
     assert "pattern_name" not in row
     assert "role_to_span" not in row
     assert row["matched_text"] == tgt.text

@@ -38,15 +38,18 @@ def test_syntaxgraphindex_basics() -> None:
     ]
     graph = SyntaxGraphIndex(layer_ok, sentence_id=0, sentence_span=(0, 15))
 
+    # Check: basic accessors and tree validation
     assert graph.sent_id == 0
     assert graph.sentence_span == (0, 15)
     assert graph.token_order == [1, 2, 3]
     assert graph.has_node(2)
+    # Check: non-existent node lookup
     assert not graph.has_node(99)
     assert graph.get_node(1).text == "root"
     assert graph.get_parent(1) is None
     assert graph.get_parent(2).id == 1
 
+    # Check: children, root nodes and tree validation
     assert [node.id for node in graph.get_children(1)] == [2, 3]
     assert [node.id for node in graph.get_root_nodes()] == [1]
     assert graph._validate_tree()
@@ -61,18 +64,21 @@ def test_syntaxgraphindex_iter_edges_and_nodes() -> None:
     ]
     graph = SyntaxGraphIndex(layer_ok)
 
+    # Check: iter_nodes yields nodes in token order
     assert [node.id for node in graph.iter_nodes()] == [1, 2, 3]
 
     edges_up = [
         (node.id, parent.id, direction)
         for node, parent, direction in graph.iter_edges(DirectionMode.UP)
     ]
+    # Check: iter_edges with UP returns tuples (node, parent, UP)
     assert edges_up == [(2, 1, DirectionMode.UP), (3, 1, DirectionMode.UP)]
 
     edges_down = [
         (node.id, child.id, direction)
         for node, child, direction in graph.iter_edges(DirectionMode.DOWN)
     ]
+    # Check: iter_edges with DOWN returns tuples (node, child, DOWN)
     assert edges_down == [(1, 2, DirectionMode.DOWN), (1, 3, DirectionMode.DOWN)]
 
 
@@ -91,6 +97,7 @@ def test_syntaxgraphindex_missing_head_raises() -> None:
         make_ann(2, 99, "orphan"),
     ]
     with pytest.raises(ValueError):
+        # Check: missing head references raise an error
         SyntaxGraphIndex(layer_missing_head)
 
 
@@ -100,4 +107,5 @@ def test_syntaxgraphindex_cycle_raises() -> None:
         make_ann(2, 1, "b"),
     ]
     with pytest.raises(ValueError):
+        # Check: cyclical parent-child links raise an error
         SyntaxGraphIndex(layer_cycle)

@@ -68,8 +68,10 @@ def test_match_direct_child_basic(sample_graph):
     matches = matcher.match_pattern_in_sentence(
         pattern=base_pattern, graph_index=sample_graph, sentence_index=0
     )
+    # Check: at least one match is found
     assert len(matches) >= 1
     first = matches[0]
+    # Check: the first match contains both 'parent' and 'child' roles
     assert "parent" in first.role_to_token_id and "child" in first.role_to_token_id
 
 
@@ -78,6 +80,7 @@ def test_match_sentence_aggregates(sample_graph):
     p2 = build_child_pattern("p2")
     matcher = DepChildMatcher(patterns=(p1, p2), dedup_mode="none")
     results = matcher.match_sentence(graph_index=sample_graph, sentence_index=0)
+    # Check: aggregated sentence matches are returned as a list
     assert isinstance(results, list)
 
 
@@ -88,6 +91,7 @@ def test_dedup_modes(sample_graph):
 
     m_role = DepChildMatcher(patterns=(p, p), dedup_mode="role_based")
     role_matches = m_role.match_sentence(graph_index=sample_graph, sentence_index=0)
+    # Check: role-based deduplication produces no more matches than no deduplication
     assert len(role_matches) <= len(none_matches)
 
 
@@ -127,11 +131,13 @@ def test_allow_role_node_overlap(sample_graph):
     m_yes = DepChildMatcher(patterns=(same_node_pattern,), allow_role_node_overlap=True)
     yes_matches = m_yes.match_sentence(graph_index=sample_graph, sentence_index=0)
 
+    # Check: allowing role/node overlap yields at least as many matches
     assert len(yes_matches) >= len(no_matches)
 
 
 def test_constructor_validation():
     p = build_child_pattern("p")
+    # Check: constructor validates argument types and values
     with pytest.raises(TypeError):
         DepChildMatcher(patterns=cast(Any, [p]))
     with pytest.raises(ValueError):

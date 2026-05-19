@@ -42,16 +42,21 @@ def test_constructor_wires_child_matcher():
     pattern = build_child_pattern("base_p")
     tagger = DepChildTagger(patterns=(pattern,))
 
+    # Check: DepChildTagger builds and wires an internal DepChildMatcher
     assert tagger._depchild_tagger is not None
+    # Check: the internal wrapper exposes a matcher instance
     assert tagger._depchild_tagger.matcher is not None
+    # Check: the matcher is an instance of DepChildMatcher
     assert isinstance(tagger._depchild_tagger.matcher, DepChildMatcher)
 
 
 def test_constructor_validation():
     pattern = build_child_pattern("base_p")
 
+    # Check: constructor enforces tuple type for patterns
     with pytest.raises(TypeError):
         DepChildTagger(patterns=cast(Any, [pattern]))
 
+    # Check: duplicate patterns are rejected
     with pytest.raises(ValueError):
         DepChildTagger(patterns=(pattern, pattern))
