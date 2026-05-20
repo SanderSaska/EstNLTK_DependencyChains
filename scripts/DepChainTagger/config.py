@@ -109,19 +109,16 @@ DEFAULT_OUTPUT_ATTRIBUTES: tuple = (
     "pattern_name",
     "matched_text",
     # "text",
-    "upostag",
-    "xpostag",
-    "feats",
-    "lemma",
-    "deprel",
-    "role",
-    "is_anchor",
+    # "upostag",
+    # "xpostag",
+    # "feats",
+    # "lemma",
+    # "deprel",
+    # "role",
+    # "is_anchor",
     # "match_id",
 )
 """Default attribute names on the output Layer."""
-
-DEFAULT_OUTPUT_SPAN_NAMES: tuple = ("text",)
-"""Default span names on the output Layer."""
 
 # ──────────────────────────────────────────────────────────────
 # 6.  Tagger — input layer names  (H2 / H12)

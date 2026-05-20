@@ -10,6 +10,7 @@ from typing import (
 )
 
 from .types import DirectionMode
+from .config import SEED
 import matplotlib.pyplot as plt
 import networkx as nx
 
@@ -358,11 +359,11 @@ class SyntaxGraphIndex:
         elif layout == "planar":
             positions = nx.planar_layout(graph)
         elif layout == "random":
-            positions = nx.random_layout(graph, seed=42)
+            positions = nx.random_layout(graph, seed=SEED)
         elif layout == "spectral":
             positions = nx.spectral_layout(graph)
         elif layout == "spring":
-            positions = nx.spring_layout(graph, seed=42)
+            positions = nx.spring_layout(graph, seed=SEED)
         elif layout == "shell":
             positions = nx.shell_layout(graph)
         else:
@@ -372,7 +373,7 @@ class SyntaxGraphIndex:
                 print(
                     f"Graphviz layout '{layout}' is not available. Falling back to spring layout."
                 )
-                positions = nx.spring_layout(graph, seed=42)
+                positions = nx.spring_layout(graph, seed=SEED)
 
         node_labels = nx.get_node_attributes(graph, "label")
         edge_labels = nx.get_edge_attributes(graph, "label")
