@@ -761,9 +761,9 @@ class EdgeConstraint:
     ``getattr()`` lookup on the edge context, and the retrieved value is tested
     against the corresponding condition. This replaces the former dedicated
     ``deprel_condition`` field; use ``attribute_conditions={"deprel": ...}``
-    instead. Structural fields (``direction``, ``hops``, ``crosses_sentence``)
-    remain as dedicated dataclass fields because they use range/enum logic
-    rather than simple value matching.
+    instead. Structural fields (``direction``, ``hops``) remain as dedicated
+    dataclass fields because they use range/enum logic rather than simple
+    value matching.
 
     ## Attributes:
     - **direction** (`DirectionMode`): The direction of the edge to consider (up, down, or both).
@@ -795,7 +795,7 @@ class EdgeConstraint:
         tested against the corresponding ``ValueCondition``.
 
         Args:
-            edge_context (EdgeContext): The context of the edge to check against this constraint, including its direction, deprel, hop count, and whether it crosses sentence boundaries.
+            edge_context (EdgeContext): The context of the edge to check against this constraint, including its direction, deprel, and hop count.
 
         Returns:
             bool: True if the edge context satisfies this constraint, False otherwise.

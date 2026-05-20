@@ -286,7 +286,6 @@ class ChainMatch:
                         "direction": edge_context.direction.value,
                         "deprel": edge_context.deprel,
                         "hops": edge_context.hops,
-                        "crosses_sentence": edge_context.crosses_sentence,
                     },
                 }
                 for from_role, to_role, edge_context in self.traversed_edges
@@ -315,7 +314,7 @@ class ChainMatch:
         parts.append("Traversed edges:")
         for from_role, to_role, edge_context in self.traversed_edges:
             parts.append(
-                f"  From role: {from_role} to role: {to_role}, Edge context: {{direction: {edge_context.direction.value}, deprel: {edge_context.deprel}, hops: {edge_context.hops}, crosses_sentence: {edge_context.crosses_sentence}}}"
+                f"  From role: {from_role} to role: {to_role}, Edge context: {{direction: {edge_context.direction.value}, deprel: {edge_context.deprel}, hops: {edge_context.hops}}}"
             )
         parts.append(f"Matched text: '{self.matched_text}'")
         if self.metadata:

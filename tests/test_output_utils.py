@@ -3,8 +3,8 @@ from scripts.DepChainTagger.conditions import (
     NodeConstraint,
     ValueCondition,
 )
-from scripts.DepChainTagger.child_tagger import DepChildTagger
-from scripts.DepChainTagger.tagger import DepChainTagger
+from scripts.DepChainTagger.dep_child_tagger import DepChildTagger
+from scripts.DepChainTagger.dep_chain_tagger import DepChainTagger
 from scripts.DepChainTagger.output_utils import (
     build_match_annotation_payload,
     collect_output_attribute_names,
@@ -40,8 +40,9 @@ def build_pattern() -> PathPattern:
 def test_collect_schema_fields() -> None:
     """The schema should expose role spans first and flattened metadata fields after."""
     pattern = build_pattern()
-
+    # Check: role span names are collected in first-seen order
     assert collect_role_span_names((pattern,)) == ("anchor", "s")
+    # Check: output attribute names include the role-based fields and flattened metadata
     assert collect_output_attribute_names((pattern,)) == (
         "pattern_name",
         "matched_text",
@@ -74,7 +75,6 @@ def test_build_match_annotation_payload() -> None:
                     direction=DirectionMode.UP,
                     deprel="nmod",
                     hops=1,
-                    crosses_sentence=False,
                 ),
             ),
         ),
@@ -87,7 +87,7 @@ def test_build_match_annotation_payload() -> None:
         patterns_by_name={pattern.name: pattern},
         span_names=("anchor", "s"),
     )
-
+    # Check: the payload contains the expected role spans and flattened metadata fields
     assert payload["anchor"] == (19, 24)
     assert payload["s"] == (6, 11)
     assert payload["pattern_name"] == "season"
@@ -121,7 +121,7 @@ def test_tagger_constructors_use_schema_helpers() -> None:
 
     chain_tagger = DepChainTagger(patterns=(chain_pattern,))
     child_tagger = DepChildTagger(patterns=(child_pattern,))
-
+    # Check: both taggers use the same helpers to collect output schema fields
     assert chain_tagger.output_span_names == ("anchor", "s")
     assert child_tagger.output_span_names == ("anchor", "s")
     assert chain_tagger.output_attributes[:2] == ("pattern_name", "matched_text")

@@ -167,7 +167,6 @@ class PhraseDecorator:
                     "direction": edge_context.direction.value,
                     "deprel": edge_context.deprel,
                     "hops": edge_context.hops,
-                    "crosses_sentence": edge_context.crosses_sentence,
                 }
             )
         return rows

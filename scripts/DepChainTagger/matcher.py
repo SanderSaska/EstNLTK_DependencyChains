@@ -55,7 +55,6 @@ class DepChainMatcher:
         graph_index: SyntaxGraphIndex,
         sentence_index: int,
         sentence_span: Optional[Tuple[int, int]] = None,
-        sentence_spans: Optional[List[Tuple[int, int]]] = None,
     ) -> List[ChainMatch]:
         """
         Match all configured patterns against one sentence graph.
@@ -66,12 +65,6 @@ class DepChainMatcher:
             sentence_span (Optional[Tuple[int, int]], optional): Sentence
                 character span override. If None, uses graph metadata when
                 available.
-            sentence_spans (Optional[List[Tuple[int, int]]], optional): All
-                sentence character spans in the document, ordered by sentence
-                index. When provided, the matcher can compute whether an edge
-                crosses a sentence boundary. When None (default), every edge
-                is assumed to stay within its sentence.
-
         Returns:
             List[ChainMatch]: Accepted matches in insertion order.
         """
@@ -86,7 +79,6 @@ class DepChainMatcher:
                 graph_index=graph_index,
                 sentence_index=sentence_index,
                 sentence_span=sentence_span,
-                sentence_spans=sentence_spans,
             )
             collector.extend(pattern_matches)
 
@@ -98,7 +90,6 @@ class DepChainMatcher:
         graph_index: SyntaxGraphIndex,
         sentence_index: int,
         sentence_span: Optional[Tuple[int, int]] = None,
-        sentence_spans: Optional[List[Tuple[int, int]]] = None,
     ) -> List[ChainMatch]:
         """
         Match one path pattern against one sentence graph.
@@ -109,9 +100,6 @@ class DepChainMatcher:
             sentence_index (int): Zero-based sentence index in the source text.
             sentence_span (Optional[Tuple[int, int]], optional): Sentence
                 character span override.
-            sentence_spans (Optional[List[Tuple[int, int]]], optional): All
-                sentence character spans in the document, for cross-sentence
-                edge detection.
 
         Returns:
             List[ChainMatch]: All successful matches for this pattern.
@@ -136,7 +124,6 @@ class DepChainMatcher:
                 graph_index=graph_index,
                 assigned_nodes_by_index=initial_nodes,
                 assigned_edge_by_index=initial_edges,
-                sentence_spans=sentence_spans,
             )
 
             for assigned_nodes, assigned_edges in assignments:
@@ -158,7 +145,6 @@ class DepChainMatcher:
         graph_index: SyntaxGraphIndex,
         assigned_nodes_by_index: Dict[int, estnltk.Span],
         assigned_edge_by_index: Dict[int, EdgeContext],
-        sentence_spans: Optional[List[Tuple[int, int]]] = None,
     ) -> List[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]]:
         """
         Recursively expand a partial assignment until all pattern steps are set.
@@ -170,9 +156,6 @@ class DepChainMatcher:
                 node assignment keyed by `node_steps` index.
             assigned_edge_by_index (Dict[int, EdgeContext]): Current partial
                 edge assignment keyed by `edge_steps` index.
-            sentence_spans (Optional[List[Tuple[int, int]]], optional): All
-                sentence character spans, for cross-sentence edge detection.
-
         Returns:
             List[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]]:
             Completed assignments.
@@ -199,14 +182,12 @@ class DepChainMatcher:
                 graph_index=graph_index,
                 source_node=known_node,
                 edge_constraint=pattern.edge_steps[edge_index],
-                sentence_spans=sentence_spans,
             )
         else:
             candidate_pairs = self._enumerate_sources_to_target(
                 graph_index=graph_index,
                 target_node=known_node,
                 edge_constraint=pattern.edge_steps[edge_index],
-                sentence_spans=sentence_spans,
             )
 
         completed: List[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]] = []
@@ -237,7 +218,6 @@ class DepChainMatcher:
                     graph_index=graph_index,
                     assigned_nodes_by_index=next_nodes,
                     assigned_edge_by_index=next_edges,
-                    sentence_spans=sentence_spans,
                 )
             )
 
@@ -275,7 +255,6 @@ class DepChainMatcher:
         graph_index: SyntaxGraphIndex,
         source_node: estnltk.Span,
         edge_constraint: EdgeConstraint,
-        sentence_spans: Optional[List[Tuple[int, int]]] = None,
     ) -> List[Tuple[estnltk.Span, EdgeContext]]:
         """
         Enumerate candidate target nodes reachable from `source_node`.
@@ -287,9 +266,6 @@ class DepChainMatcher:
             graph_index (SyntaxGraphIndex): Sentence-level dependency graph.
             source_node (estnltk.Span): Node from which to enumerate.
             edge_constraint (EdgeConstraint): Constraint the edge must satisfy.
-            sentence_spans (Optional[List[Tuple[int, int]]], optional): All
-                sentence character spans, for cross-sentence edge detection.
-                When None, `crosses_sentence` is always False.
         """
         candidates: List[Tuple[estnltk.Span, EdgeContext]] = []
         min_hops, max_hops = self._resolve_hop_bounds(
@@ -306,12 +282,10 @@ class DepChainMatcher:
                     direction=direction,
                     hops=hops,
                 ):
-                    crosses = self._crosses_sentence(source_node, node, sentence_spans)
                     edge_context = self._build_edge_context(
                         direction=direction,
                         deprel=deprel,
                         hops=hops,
-                        crosses_sentence=crosses,
                     )
                     if edge_constraint.matches(edge_context):
                         candidates.append((node, edge_context))
@@ -322,7 +296,6 @@ class DepChainMatcher:
         graph_index: SyntaxGraphIndex,
         target_node: estnltk.Span,
         edge_constraint: EdgeConstraint,
-        sentence_spans: Optional[List[Tuple[int, int]]] = None,
     ) -> List[Tuple[estnltk.Span, EdgeContext]]:
         """
         Enumerate candidate source nodes that can reach `target_node`.
@@ -339,8 +312,6 @@ class DepChainMatcher:
             graph_index (SyntaxGraphIndex): Sentence-level dependency graph.
             target_node (estnltk.Span): The target node to reach.
             edge_constraint (EdgeConstraint): Constraint the edge must satisfy.
-            sentence_spans (Optional[List[Tuple[int, int]]], optional): All
-                sentence character spans, for cross-sentence edge detection.
         """
         candidates: List[Tuple[estnltk.Span, EdgeContext]] = []
         min_hops, max_hops = self._resolve_hop_bounds(
@@ -358,14 +329,10 @@ class DepChainMatcher:
                         self._get_node_id(target_node)
                     ):
                         deprel = getattr(source_node, "deprel", None)
-                        crosses = self._crosses_sentence(
-                            source_node, target_node, sentence_spans
-                        )
                         edge_context = self._build_edge_context(
                             direction=DirectionMode.UP,
                             deprel=deprel,
                             hops=1,
-                            crosses_sentence=crosses,
                         )
                         if edge_constraint.matches(edge_context):
                             candidates.append((source_node, edge_context))
@@ -376,14 +343,10 @@ class DepChainMatcher:
                     source_node = graph_index.get_parent(self._get_node_id(target_node))
                     if source_node is not None:
                         deprel = getattr(target_node, "deprel", None)
-                        crosses = self._crosses_sentence(
-                            source_node, target_node, sentence_spans
-                        )
                         edge_context = self._build_edge_context(
                             direction=DirectionMode.DOWN,
                             deprel=deprel,
                             hops=1,
-                            crosses_sentence=crosses,
                         )
                         if edge_constraint.matches(edge_context):
                             candidates.append((source_node, edge_context))
@@ -414,7 +377,6 @@ class DepChainMatcher:
                         graph_index=graph_index,
                         source_node=source_node,
                         edge_constraint=edge_constraint,
-                        sentence_spans=sentence_spans,
                     ):
                         if self._get_node_id(candidate_node) == self._get_node_id(
                             target_node
@@ -509,7 +471,6 @@ class DepChainMatcher:
         direction: DirectionMode,
         deprel: Optional[str],
         hops: int,
-        crosses_sentence: bool,
     ) -> EdgeContext:
         """
         Create an `EdgeContext` instance for edge constraint checks.
@@ -518,68 +479,8 @@ class DepChainMatcher:
             direction=direction,
             deprel=deprel,
             hops=hops,
-            crosses_sentence=crosses_sentence,
         )
         return edge_context
-
-    def _sentence_index_for_node(
-        self: Self,
-        node: estnltk.Span,
-        sentence_spans: List[Tuple[int, int]],
-    ) -> Optional[int]:
-        """
-        Return the index of the sentence whose character span contains *node*.
-
-        A node belongs to a sentence when its [start, end) is fully contained
-        within the sentence's [span_start, span_end).
-
-        Args:
-            node (estnltk.Span): The node to locate.
-            sentence_spans (List[Tuple[int, int]]): Ordered list of
-                (start, end) character spans, one per sentence.
-
-        Returns:
-            Optional[int]: Sentence index, or None if the node does not
-            fall inside any known sentence span.
-        """
-        for idx, (span_start, span_end) in enumerate(sentence_spans):
-            if node.start >= span_start and node.end <= span_end:
-                return idx
-        return None
-
-    def _crosses_sentence(
-        self: Self,
-        node_a: estnltk.Span,
-        node_b: estnltk.Span,
-        sentence_spans: Optional[List[Tuple[int, int]]],
-    ) -> bool:
-        """
-        Determine whether two nodes belong to different sentences.
-
-        If *sentence_spans* is None (no boundary information available),
-        the method returns False, preserving backward-compatible behaviour.
-
-        Args:
-            node_a (estnltk.Span): First node.
-            node_b (estnltk.Span): Second node.
-            sentence_spans (Optional[List[Tuple[int, int]]]): Ordered list
-                of (start, end) character spans for every sentence in the
-                document, or None when boundary information is unavailable.
-
-        Returns:
-            bool: True if the two nodes fall inside different sentences,
-            False otherwise (including when sentence_spans is None).
-        """
-        if sentence_spans is None:
-            return False
-
-        idx_a = self._sentence_index_for_node(node_a, sentence_spans)
-        idx_b = self._sentence_index_for_node(node_b, sentence_spans)
-
-        if idx_a is None or idx_b is None:
-            return False
-
-        return idx_a != idx_b
 
     def _get_node_id(self: Self, node: estnltk.Span) -> int:
         """
@@ -617,8 +518,9 @@ class DepChainMatcher:
                 )
             traversed_edges.append((from_role, to_role, edge_context))
 
+        emit_roles = pattern.emit_roles or ()
         matched_text = " ".join(
-            getattr(role_to_node[role], "text", "") for role in pattern.emit_roles
+            getattr(role_to_node[role], "text", "") for role in emit_roles
         ).strip()
 
         return ChainMatch(

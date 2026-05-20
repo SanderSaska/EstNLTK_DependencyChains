@@ -33,9 +33,9 @@ from .output_utils import (
     collect_role_span_names,
 )
 from .orchestrator import DepTaggerOrchestrator
-from .tagger import DepChainTagger
+from .dep_chain_tagger import DepChainTagger
 from .child_matcher import DepChildMatcher
-from .child_tagger import DepChildTagger
+from .dep_child_tagger import DepChildTagger
 
 __all__ = [
     "ConditionMode",

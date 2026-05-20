@@ -56,4 +56,3 @@ class EdgeContext:
     direction: DirectionMode
     deprel: Optional[str] = None
     hops: int = 1
-    crosses_sentence: bool = False

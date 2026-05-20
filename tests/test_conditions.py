@@ -365,14 +365,12 @@ def make_edge_context(
     direction: DirectionMode,
     deprel: str | None,
     hops: int,
-    crosses_sentence: bool,
 ) -> EdgeContext:
     """Build an EdgeContext instance for tests."""
     ctx = EdgeContext(
         direction=direction,
         deprel=deprel,
         hops=hops,
-        crosses_sentence=crosses_sentence,
     )
     return ctx
 
@@ -384,11 +382,11 @@ def test_edgeconstraint_up_and_direction_mismatch() -> None:
         min_hops=1,
         max_hops=2,
     )
-    ctx_up_ok = make_edge_context(DirectionMode.UP, "nmod", 1, False)
+    ctx_up_ok = make_edge_context(DirectionMode.UP, "nmod", 1)
     # Check: matching works for correct direction and deprel
     assert c_up.matches(ctx_up_ok)
 
-    ctx_wrong_dir = make_edge_context(DirectionMode.DOWN, "nmod", 1, False)
+    ctx_wrong_dir = make_edge_context(DirectionMode.DOWN, "nmod", 1)
     # Check: wrong direction does not match
     assert not c_up.matches(ctx_wrong_dir)
 
@@ -401,8 +399,8 @@ def test_edgeconstraint_both_direction_and_deprel_hops() -> None:
         max_hops=3,
     )
     # Check: BOTH direction accepts both up and down when deprel and hops are OK
-    assert c_both.matches(make_edge_context(DirectionMode.UP, "obl", 2, False))
-    assert c_both.matches(make_edge_context(DirectionMode.DOWN, "obl", 2, False))
+    assert c_both.matches(make_edge_context(DirectionMode.UP, "obl", 2))
+    assert c_both.matches(make_edge_context(DirectionMode.DOWN, "obl", 2))
     c_up = EdgeConstraint(
         direction=DirectionMode.UP,
         attribute_conditions={"deprel": ValueCondition(ConditionMode.EXACT, "nmod")},
@@ -410,12 +408,12 @@ def test_edgeconstraint_both_direction_and_deprel_hops() -> None:
         max_hops=2,
     )
     # Check: mismatched deprel or hops fall outside allowed ranges
-    assert not c_up.matches(make_edge_context(DirectionMode.UP, "obl", 1, False))
-    assert not c_up.matches(make_edge_context(DirectionMode.UP, "nmod", 0, False))
-    assert not c_up.matches(make_edge_context(DirectionMode.UP, "nmod", 3, False))
+    assert not c_up.matches(make_edge_context(DirectionMode.UP, "obl", 1))
+    assert not c_up.matches(make_edge_context(DirectionMode.UP, "nmod", 0))
+    assert not c_up.matches(make_edge_context(DirectionMode.UP, "nmod", 3))
 
 
-def test_edgeconstraint_cross_sentence_policy_describe_and_validation() -> None:
+def test_edgeconstraint_policy_describe_and_validation() -> None:
     c_up = EdgeConstraint(
         direction=DirectionMode.UP,
         attribute_conditions={"deprel": ValueCondition(ConditionMode.EXACT, "nmod")},

@@ -33,7 +33,7 @@ def sample_nodes():
 
 def make_match(source_node, target_node, pattern_name="p") -> ChainMatch:
     edge_ctx = EdgeContext(
-        direction=DirectionMode.UP, deprel="nmod", hops=1, crosses_sentence=False
+        direction=DirectionMode.UP, deprel="nmod", hops=1
     )
     return ChainMatch(
         pattern_name=pattern_name,

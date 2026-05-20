@@ -118,7 +118,6 @@ class DepTaggerOrchestrator:
                 graph_index=graph_index,
                 sentence_index=sentence_index,
                 sentence_span=sentence_span,
-                sentence_spans=spans,
             )
 
             global_collector.extend(sentence_matches)

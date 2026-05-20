@@ -58,7 +58,6 @@ class DepChildMatcher:
         graph_index: SyntaxGraphIndex,
         sentence_index: int,
         sentence_span: Optional[Tuple[int, int]] = None,
-        sentence_spans: Optional[List[Tuple[int, int]]] = None,
     ) -> List[ChainMatch]:
         collector = MatchCollector(
             dedup_mode=self.dedup_mode,
@@ -71,7 +70,6 @@ class DepChildMatcher:
                 graph_index=graph_index,
                 sentence_index=sentence_index,
                 sentence_span=sentence_span,
-                sentence_spans=sentence_spans,
             )
             collector.extend(pattern_matches)
 
@@ -83,7 +81,6 @@ class DepChildMatcher:
         graph_index: SyntaxGraphIndex,
         sentence_index: int,
         sentence_span: Optional[Tuple[int, int]] = None,
-        sentence_spans: Optional[List[Tuple[int, int]]] = None,
     ) -> List[ChainMatch]:
         """
         Match one path pattern against the sentence graph, but only via
@@ -214,12 +211,10 @@ class DepChildMatcher:
                     direction=direction,
                     hops=hops,
                 ):
-                    crosses = False
                     edge_context = EdgeContext(
                         direction=DirectionMode.DOWN,
                         deprel=deprel,
                         hops=hops,
-                        crosses_sentence=crosses,
                     )
                     if edge_constraint.matches(edge_context):
                         candidates.append((node, edge_context))
