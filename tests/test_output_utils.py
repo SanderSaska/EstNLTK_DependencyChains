@@ -49,10 +49,6 @@ def test_collect_schema_fields() -> None:
         "pattern_name",
         "matched_text",
         "anchor_text",
-        "anchor_direction",
-        "anchor_min_hops",
-        "anchor_max_hops",
-        "anchor_deprel",
     )
 
 
@@ -95,11 +91,8 @@ def test_build_match_annotation_payload() -> None:
     assert payload["s"] == (6, 11)
     assert payload["pattern_name"] == "season"
     assert payload["matched_text"] == "suvel aasta"
-    assert payload["anchor_text"] == "suvel"
-    assert payload["anchor_min_hops"] == 1
-    assert payload["anchor_max_hops"] == 1
-    assert payload["anchor_direction"] == "up"
-    assert payload["anchor_deprel_value"] == "nmod"
+    assert payload["anchor_text"]["value"] == "suvel"
+    # Edge-derived metadata is intentionally not included in the payload.
 
 
 def test_tagger_constructors_use_schema_helpers() -> None:
