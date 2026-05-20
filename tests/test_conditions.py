@@ -360,6 +360,23 @@ def test_nodeconstraint_selectivity_describe_and_validation() -> None:
         )
 
 
+def test_nodeconstraint_feats_allowed_in_attribute_conditions() -> None:
+    """Ensure that `attribute_conditions` can contain a FeatureCondition under 'feats'."""
+    node = make_node(feats={"sg": "sg", "n": "n"})
+    constraint = NodeConstraint(
+        role="feat_attr",
+        attribute_conditions={
+            "feats": FeatureCondition(
+                mode=ConditionMode.EXACT,
+                required={"sg": "sg", "n": "n"},
+                allow_extra_keys=True,
+            )
+        },
+    )
+    assert constraint.matches(node)
+
+
+
 # EdgeConstraint class testing
 def make_edge_context(
     direction: DirectionMode,

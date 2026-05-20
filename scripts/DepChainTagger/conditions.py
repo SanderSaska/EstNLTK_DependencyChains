@@ -7,6 +7,7 @@ from typing import (
     Self,
     Any,
     Callable,
+    Union,
 )
 from dataclasses import dataclass
 
@@ -593,7 +594,7 @@ class NodeConstraint:
     """
 
     role: str
-    attribute_conditions: Optional[Dict[str, ValueCondition]] = None
+    attribute_conditions: Optional[Dict[str, Union[ValueCondition, FeatureCondition]]] = None
     feats_condition: Optional[FeatureCondition] = None
     extra_predicates: Optional[Tuple[NodePredicate, ...]] = None
 
@@ -601,6 +602,17 @@ class NodeConstraint:
         """
         Validate config and pre-normalise expected values once.
         """
+        # If a dedicated feats_condition is provided, expose it via
+        # attribute_conditions under the key 'feats' so matching logic
+        # can uniformly consult attribute_conditions. Keep the original
+        # `feats_condition` field for backwards compatibility and
+        # descriptive output.
+        if self.feats_condition is not None:
+            ac: Dict[str, Any] = dict(self.attribute_conditions) if self.attribute_conditions else {}
+            if "feats" not in ac:
+                ac["feats"] = self.feats_condition
+            object.__setattr__(self, "attribute_conditions", ac)
+
         self._validate_or_raise()
 
     def matches(self: Self, node_annotation: Any) -> bool:
@@ -623,7 +635,12 @@ class NodeConstraint:
                 actual_value = getattr(node_annotation, attr_name, None)
                 if not condition.matches(actual_value):
                     return False
-        if self.feats_condition:
+        # If feats_condition was merged into attribute_conditions under 'feats',
+        # the check has already been performed above. Only run the dedicated
+        # feats_condition check when no 'feats' attribute_condition exists.
+        if self.feats_condition and not (
+            self.attribute_conditions and "feats" in self.attribute_conditions
+        ):
             feats = getattr(node_annotation, "feats", None)
             if not self.feats_condition.matches(feats):
                 return False
@@ -644,25 +661,40 @@ class NodeConstraint:
         # Exact > Membership ≈ Regex > Negation > Wildcard(0.0) in terms of selectivity
         if self.attribute_conditions:
             for cond in self.attribute_conditions.values():
-                if cond.mode == ConditionMode.EXACT:
-                    score += SELECTIVITY_WEIGHT_EXACT
-                elif cond.mode == ConditionMode.MEMBERSHIP:
-                    score += SELECTIVITY_WEIGHT_MEMBERSHIP
-                elif cond.mode == ConditionMode.NOT_MEMBERSHIP:
-                    score += SELECTIVITY_WEIGHT_MEMBERSHIP
-                elif cond.mode == ConditionMode.REGEX:
-                    score += SELECTIVITY_WEIGHT_REGEX
-                elif cond.mode == ConditionMode.NEGATION:
-                    score += SELECTIVITY_WEIGHT_NEGATION
+                # cond may be ValueCondition or FeatureCondition
+                if isinstance(cond, FeatureCondition):
+                    if cond.mode == ConditionMode.EXACT:
+                        score += SELECTIVITY_WEIGHT_EXACT
+                    elif cond.mode == ConditionMode.MEMBERSHIP:
+                        score += SELECTIVITY_WEIGHT_MEMBERSHIP
+                    elif cond.mode == ConditionMode.NOT_MEMBERSHIP:
+                        score += SELECTIVITY_WEIGHT_MEMBERSHIP
+                    elif cond.mode == ConditionMode.NEGATION:
+                        score += SELECTIVITY_WEIGHT_NEGATION
+                else:
+                    if cond.mode == ConditionMode.EXACT:
+                        score += SELECTIVITY_WEIGHT_EXACT
+                    elif cond.mode == ConditionMode.MEMBERSHIP:
+                        score += SELECTIVITY_WEIGHT_MEMBERSHIP
+                    elif cond.mode == ConditionMode.NOT_MEMBERSHIP:
+                        score += SELECTIVITY_WEIGHT_MEMBERSHIP
+                    elif cond.mode == ConditionMode.REGEX:
+                        score += SELECTIVITY_WEIGHT_REGEX
+                    elif cond.mode == ConditionMode.NEGATION:
+                        score += SELECTIVITY_WEIGHT_NEGATION
         if self.feats_condition is not None:
-            if self.feats_condition.mode == ConditionMode.EXACT:
-                score += SELECTIVITY_WEIGHT_EXACT
-            elif self.feats_condition.mode == ConditionMode.MEMBERSHIP:
-                score += SELECTIVITY_WEIGHT_MEMBERSHIP
-            elif self.feats_condition.mode == ConditionMode.NOT_MEMBERSHIP:
-                score += SELECTIVITY_WEIGHT_MEMBERSHIP
-            elif self.feats_condition.mode == ConditionMode.NEGATION:
-                score += SELECTIVITY_WEIGHT_NEGATION
+            # If feats_condition was merged into attribute_conditions (key 'feats'),
+            # it has already been counted above. Only count it here when the
+            # attribute_conditions does not contain a 'feats' key.
+            if not (self.attribute_conditions and "feats" in self.attribute_conditions):
+                if self.feats_condition.mode == ConditionMode.EXACT:
+                    score += SELECTIVITY_WEIGHT_EXACT
+                elif self.feats_condition.mode == ConditionMode.MEMBERSHIP:
+                    score += SELECTIVITY_WEIGHT_MEMBERSHIP
+                elif self.feats_condition.mode == ConditionMode.NOT_MEMBERSHIP:
+                    score += SELECTIVITY_WEIGHT_MEMBERSHIP
+                elif self.feats_condition.mode == ConditionMode.NEGATION:
+                    score += SELECTIVITY_WEIGHT_NEGATION
         if self.extra_predicates:
             score += SELECTIVITY_WEIGHT_EXTRA_PREDICATE * len(self.extra_predicates)
 
@@ -697,27 +729,27 @@ class NodeConstraint:
         if self.attribute_conditions is not None:
             if not isinstance(self.attribute_conditions, dict):
                 raise TypeError(
-                    "attribute_conditions must be a Dict[str, ValueCondition] or None."
+                    "attribute_conditions must be a Dict[str, ValueCondition|FeatureCondition] or None."
                 )
             for key, cond in self.attribute_conditions.items():
                 if not isinstance(key, str) or key.strip() == "":
                     raise TypeError(
                         "Each key in attribute_conditions must be a non-empty string."
                     )
-                if not isinstance(cond, ValueCondition):
+                # Accept either ValueCondition or FeatureCondition as a value.
+                if not isinstance(cond, (ValueCondition, FeatureCondition)):
                     raise TypeError(
-                        f"Each value in attribute_conditions must be a ValueCondition, "
+                        f"Each value in attribute_conditions must be ValueCondition or FeatureCondition, "
                         f"got {type(cond).__name__} for key '{key}'."
                     )
-                # Disallow dict-valued expected values in attribute_conditions to
+                # Disallow dict-valued expected values on ValueCondition entries to
                 # avoid confusing use for dict-like attributes (e.g. `feats`).
-                # Users should place multi-key feature constraints in `feats_condition`.
-                if getattr(cond, "value", None) is not None and isinstance(
+                if isinstance(cond, ValueCondition) and getattr(cond, "value", None) is not None and isinstance(
                     cond.value, dict
                 ):
                     raise ValueError(
                         f"attribute_conditions entry '{key}' has a dict-valued expected "
-                        "value; use feats_condition (FeatureCondition) for dict-valued attributes."
+                        "value; use FeatureCondition for dict-valued attributes."
                     )
             # Reject attribute names that must use a different condition type
             # or are handled by dedicated non-condition fields.
@@ -725,15 +757,22 @@ class NodeConstraint:
                 RESERVED_NODE_ATTRIBUTE_NAMES.keys()
             )
             if overlapping:
-                details = {
-                    attr: RESERVED_NODE_ATTRIBUTE_NAMES[attr] for attr in overlapping
+                invalid_reserved = {
+                    attr
+                    for attr in overlapping
+                    if not isinstance(self.attribute_conditions.get(attr), FeatureCondition)
                 }
-                raise ValueError(
-                    f"attribute_conditions keys {overlapping} are reserved. "
-                    f"These attributes require a different condition type or are "
-                    f"handled by dedicated fields: {details}. "
-                    f"Use the dedicated fields instead."
-                )
+                if invalid_reserved:
+                    details = {
+                        attr: RESERVED_NODE_ATTRIBUTE_NAMES[attr]
+                        for attr in invalid_reserved
+                    }
+                    raise ValueError(
+                        f"attribute_conditions keys {invalid_reserved} are reserved. "
+                        f"These attributes require a different condition type or are "
+                        f"handled by dedicated fields: {details}. "
+                        f"Use the dedicated fields instead."
+                    )
 
         if self.feats_condition is not None and not isinstance(
             self.feats_condition, FeatureCondition

@@ -42,8 +42,10 @@ def test_collect_schema_fields() -> None:
     pattern = build_pattern()
     # Check: role span names are collected in first-seen order
     assert collect_role_span_names((pattern,)) == ("anchor", "s")
-    # Check: output attribute names include the role-based fields and flattened metadata
-    assert collect_output_attribute_names((pattern,)) == (
+    # Check: opt-in constraint fields expand the schema with flattened metadata
+    assert collect_output_attribute_names(
+        (pattern,), include_pattern_constraints=True
+    ) == (
         "pattern_name",
         "matched_text",
         "anchor_text",
@@ -86,6 +88,7 @@ def test_build_match_annotation_payload() -> None:
         match=match,
         patterns_by_name={pattern.name: pattern},
         span_names=("anchor", "s"),
+        include_pattern_constraints=True,
     )
     # Check: the payload contains the expected role spans and flattened metadata fields
     assert payload["anchor"] == (19, 24)
@@ -96,7 +99,7 @@ def test_build_match_annotation_payload() -> None:
     assert payload["anchor_min_hops"] == 1
     assert payload["anchor_max_hops"] == 1
     assert payload["anchor_direction"] == "up"
-    assert payload["anchor_deprel"] == "nmod"
+    assert payload["anchor_deprel_value"] == "nmod"
 
 
 def test_tagger_constructors_use_schema_helpers() -> None:
