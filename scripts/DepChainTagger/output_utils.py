@@ -17,13 +17,13 @@ def _serialize_value_condition(condition: ValueCondition) -> Any:
     """Serialize a scalar value condition into a tabular-friendly value."""
     if condition.mode is ConditionMode.WILDCARD:
         return None
-    if (
-        condition.mode is ConditionMode.EXACT
-        and condition.allow_missing is False
-        and condition.normalizer is None
-        and condition.missing_markers == (None, "", "_")
-    ):
-        return condition.value
+    # if (
+    #     condition.mode is ConditionMode.EXACT
+    #     and condition.allow_missing is False
+    #     and condition.normalizer is None
+    #     and condition.missing_markers == (None, "", "_")
+    # ):
+    #     return condition.value
     return {
         "mode": condition.mode.value,
         "value": condition.value,
@@ -101,30 +101,35 @@ def collect_role_span_names(patterns: Iterable[PathPattern]) -> Tuple[str, ...]:
     return tuple(span_names)
 
 
-def collect_output_attribute_names(patterns: Iterable[PathPattern]) -> Tuple[str, ...]:
+def collect_output_attribute_names(
+    patterns: Iterable[PathPattern], include_pattern_constraints: bool = False
+) -> Tuple[str, ...]:
     """Collect the flattened metadata fields needed to render all patterns."""
     attribute_names: List[str] = ["pattern_name", "matched_text"]
     seen: set[str] = set(attribute_names)
 
-    for pattern in patterns:
-        for node_constraint in pattern.node_steps:
-            prefix = f"{node_constraint.role}_"
-            if node_constraint.attribute_conditions:
-                for attr_name in node_constraint.attribute_conditions:
-                    _append_unique(attribute_names, seen, f"{prefix}{attr_name}")
-            if node_constraint.feats_condition is not None:
-                _append_unique(attribute_names, seen, f"{prefix}feats")
-            if node_constraint.extra_predicates:
-                _append_unique(attribute_names, seen, f"{prefix}extra_predicates")
+    if include_pattern_constraints:
+        for pattern in patterns:
+            for node_constraint in pattern.node_steps:
+                prefix = f"{node_constraint.role}_"
+                if node_constraint.attribute_conditions:
+                    for attr_name in node_constraint.attribute_conditions:
+                        _append_unique(attribute_names, seen, f"{prefix}{attr_name}")
+                if node_constraint.feats_condition is not None:
+                    _append_unique(attribute_names, seen, f"{prefix}feats")
+                if node_constraint.extra_predicates:
+                    _append_unique(attribute_names, seen, f"{prefix}extra_predicates")
 
-        for index, edge_constraint in enumerate(pattern.edge_steps):
-            source_role = pattern.node_steps[index].role
-            _append_unique(attribute_names, seen, f"{source_role}_direction")
-            _append_unique(attribute_names, seen, f"{source_role}_min_hops")
-            _append_unique(attribute_names, seen, f"{source_role}_max_hops")
-            if edge_constraint.attribute_conditions:
-                for attr_name in edge_constraint.attribute_conditions:
-                    _append_unique(attribute_names, seen, f"{source_role}_{attr_name}")
+            for index, edge_constraint in enumerate(pattern.edge_steps):
+                source_role = pattern.node_steps[index].role
+                _append_unique(attribute_names, seen, f"{source_role}_direction")
+                _append_unique(attribute_names, seen, f"{source_role}_min_hops")
+                _append_unique(attribute_names, seen, f"{source_role}_max_hops")
+                if edge_constraint.attribute_conditions:
+                    for attr_name in edge_constraint.attribute_conditions:
+                        _append_unique(
+                            attribute_names, seen, f"{source_role}_{attr_name}"
+                        )
 
     return tuple(attribute_names)
 
@@ -133,6 +138,7 @@ def build_match_annotation_payload(
     match: ChainMatch,
     patterns_by_name: Dict[str, PathPattern],
     span_names: Tuple[str, ...],
+    include_pattern_constraints: bool = False,
 ) -> Dict[str, Any]:
     """Build one relation-layer annotation per match."""
     pattern = patterns_by_name.get(match.pattern_name)
@@ -155,11 +161,12 @@ def build_match_annotation_payload(
             )
         payload[role] = (int(start), int(end))
 
-    for node_constraint in pattern.node_steps:
-        payload.update(_serialize_node_constraint(node_constraint))
+    if include_pattern_constraints:
+        for node_constraint in pattern.node_steps:
+            payload.update(_serialize_node_constraint(node_constraint))
 
-    for index, edge_constraint in enumerate(pattern.edge_steps):
-        source_role = pattern.node_steps[index].role
-        payload.update(_serialize_edge_constraint(source_role, edge_constraint))
+        for index, edge_constraint in enumerate(pattern.edge_steps):
+            source_role = pattern.node_steps[index].role
+            payload.update(_serialize_edge_constraint(source_role, edge_constraint))
 
     return payload

@@ -8,8 +8,6 @@ from typing import (
     Tuple,
     cast,
 )
-import hashlib
-import re
 
 from estnltk import Text
 from estnltk.taggers import RelationTagger
@@ -27,28 +25,12 @@ from .config import (
 )
 from .orchestrator import DepTaggerOrchestrator
 from .patterns import PathPattern
-from scripts.DepChainTagger.output_utils import (
+from .output_utils import (
     build_match_annotation_payload,
     collect_output_attribute_names,
     collect_role_span_names,
 )
 from .types import DirectionMode
-
-
-def _deterministic_hash(items: Tuple[Any, ...]) -> str:
-    """Return a short stable hash for match identifiers."""
-    serialized = str(items).encode("utf-8")
-    return hashlib.sha256(serialized).hexdigest()[:12]
-
-
-def _make_identifier(value: str) -> str:
-    """Sanitise a string into a RelationLayer-safe identifier."""
-    ident = re.sub(r"\W+", "_", value).strip("_")
-    if not ident:
-        ident = "span"
-    if ident[0].isdigit():
-        ident = f"_{ident}"
-    return ident
 
 
 class DepChildTagger(RelationTagger):
@@ -64,6 +46,7 @@ class DepChildTagger(RelationTagger):
         "output_layer",
         "output_span_names",
         "output_attributes",
+        "include_pattern_constraints",
         "sentence_match_dedup_mode",
         "max_matches_per_sentence",
         "allow_role_node_overlap",
@@ -78,6 +61,7 @@ class DepChildTagger(RelationTagger):
         patterns: Tuple[PathPattern, ...],
         output_layer: str = DEFAULT_OUTPUT_LAYER_NAME,
         output_attributes: Optional[Tuple[str, ...]] = None,
+        include_pattern_constraints: bool = False,
         sentence_match_dedup_mode: Literal["none", "exact", "role_based"] = cast(
             Literal["none", "exact", "role_based"], DEFAULT_DEDUP_MODE_SENTENCE
         ),
@@ -91,11 +75,14 @@ class DepChildTagger(RelationTagger):
 
         self.input_layers = (DEFAULT_SYNTAX_LAYER_NAME, DEFAULT_SENTENCES_LAYER_NAME)
         self.output_layer = output_layer
+        self.include_pattern_constraints = include_pattern_constraints
         self.output_span_names = collect_role_span_names(patterns)
         self.output_attributes = (
             output_attributes
             if output_attributes is not None
-            else collect_output_attribute_names(patterns)
+            else collect_output_attribute_names(
+                patterns, self.include_pattern_constraints
+            )
         )
 
         self._depchild_tagger = DepTaggerOrchestrator(
@@ -215,5 +202,6 @@ class DepChildTagger(RelationTagger):
             match=match,
             patterns_by_name=self._pattern_by_name,
             span_names=self.output_span_names,
+            include_pattern_constraints=self.include_pattern_constraints,
         )
         layer.add_annotation(annotation_payload)
