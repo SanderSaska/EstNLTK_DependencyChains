@@ -1,7 +1,7 @@
 from typing import Any, Dict, Iterable, List, Tuple
 
 from .conditions import (
-    FeatureCondition,
+    NestedValueCondition,
     NodeConstraint,
     ValueCondition,
 )
@@ -30,7 +30,7 @@ def _serialize_value_condition(condition: ValueCondition) -> Any:
     }
 
 
-def _serialize_feature_condition(condition: FeatureCondition) -> Dict[str, Any]:
+def _serialize_feature_condition(condition: NestedValueCondition) -> Dict[str, Any]:
     """Serialize a feature condition into a JSON-friendly dictionary."""
     return {
         "mode": condition.mode.value,
@@ -50,22 +50,16 @@ def _serialize_node_constraint(node_constraint: NodeConstraint) -> Dict[str, Any
 
     if node_constraint.attribute_conditions:
         for attr_name, condition in node_constraint.attribute_conditions.items():
-            if isinstance(condition, FeatureCondition):
-                value = _serialize_feature_condition(condition)
-            else:
-                value = _serialize_value_condition(condition)
+            value = _serialize_value_condition(condition)
             if value is not None:
                 payload[f"{prefix}{attr_name}"] = value
 
-    # If a dedicated feats_condition exists but wasn't normalised into
-    # attribute_conditions, include it as flattened fields as well.
-    if node_constraint.feats_condition is not None and not (
-        node_constraint.attribute_conditions
-        and "feats" in node_constraint.attribute_conditions
-    ):
-        value = _serialize_feature_condition(node_constraint.feats_condition)
-        if value is not None:
-            payload[f"{prefix}feats"] = value
+    # Include any nested-structure attribute conditions (e.g. `feats`)
+    if node_constraint.nested_attribute_conditions:
+        for attr_name, condition in node_constraint.nested_attribute_conditions.items():
+            value = _serialize_feature_condition(condition)
+            if value is not None:
+                payload[f"{prefix}{attr_name}"] = value
 
     if node_constraint.extra_predicates:
         payload[f"{prefix}extra_predicates"] = tuple(
@@ -118,8 +112,9 @@ def collect_output_attribute_names(
             if node_constraint.attribute_conditions:
                 for attr_name in node_constraint.attribute_conditions:
                     _append_unique(attribute_names, seen, f"{prefix}{attr_name}")
-            if node_constraint.feats_condition is not None:
-                _append_unique(attribute_names, seen, f"{prefix}feats")
+            if node_constraint.nested_attribute_conditions:
+                for attr_name in node_constraint.nested_attribute_conditions:
+                    _append_unique(attribute_names, seen, f"{prefix}{attr_name}")
             if node_constraint.extra_predicates:
                 _append_unique(attribute_names, seen, f"{prefix}extra_predicates")
         # Note: edge constraint fields (direction/hops/attrs) are not

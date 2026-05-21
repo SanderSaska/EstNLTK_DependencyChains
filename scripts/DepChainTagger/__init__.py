@@ -23,7 +23,12 @@ from .config import (
     RESERVED_EDGE_ATTRIBUTE_NAMES,
 )
 from .graph import SyntaxGraphIndex
-from .conditions import ValueCondition, FeatureCondition, NodeConstraint, EdgeConstraint
+from .conditions import (
+    ValueCondition,
+    NestedValueCondition,
+    NodeConstraint,
+    EdgeConstraint,
+)
 from .patterns import PathPattern, ChainMatch, MatchCollector
 from .matcher import DepChainMatcher
 from .decorator import PhraseDecorator
@@ -65,7 +70,7 @@ __all__ = [
     "RESERVED_EDGE_ATTRIBUTE_NAMES",
     "SyntaxGraphIndex",
     "ValueCondition",
-    "FeatureCondition",
+    "NestedValueCondition",
     "NodeConstraint",
     "EdgeConstraint",
     "PathPattern",

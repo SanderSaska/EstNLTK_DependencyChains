@@ -4,7 +4,7 @@ from typing import Any, cast
 
 from scripts.DepChainTagger.conditions import (
     EdgeConstraint,
-    FeatureCondition,
+    NestedValueCondition,
     NodeConstraint,
     ValueCondition,
 )
@@ -86,9 +86,9 @@ def test_valuecondition_regex_matching() -> None:
     assert not regex.matches("VERB")
 
 
-# FeatureCondition class testing
-def test_featurecondition_exact_required_and_forbidden() -> None:
-    exact = FeatureCondition(
+# NestedValueCondition class testing
+def test_nestedvaluecondition_exact_required_and_forbidden() -> None:
+    exact = NestedValueCondition(
         mode=ConditionMode.EXACT,
         required={"Case": "Gen", "Number": "Sing"},
         forbidden={"Polarity": "Neg"},
@@ -101,8 +101,8 @@ def test_featurecondition_exact_required_and_forbidden() -> None:
     assert not exact.matches({"Case": "Gen", "Polarity": "Pos"})
 
 
-def test_featurecondition_allow_missing_and_extra_keys() -> None:
-    exact_allow_missing = FeatureCondition(
+def test_nestedvaluecondition_allow_missing_and_extra_keys() -> None:
+    exact_allow_missing = NestedValueCondition(
         mode=ConditionMode.EXACT,
         required={"Case": "Gen", "Number": "Sing"},
         forbidden={"Polarity": "Neg"},
@@ -112,7 +112,7 @@ def test_featurecondition_allow_missing_and_extra_keys() -> None:
     # Check: allow_missing and allow_extra_keys affect matching behaviour
     assert exact_allow_missing.matches({"Case": "Gen"})
 
-    exact_no_extra = FeatureCondition(
+    exact_no_extra = NestedValueCondition(
         mode=ConditionMode.EXACT,
         required={"Case": "Gen"},
         forbidden={"Polarity": "Neg"},
@@ -121,7 +121,7 @@ def test_featurecondition_allow_missing_and_extra_keys() -> None:
     # Check: extra keys rejected when allow_extra_keys=False
     assert not exact_no_extra.matches({"Case": "Gen", "Other": "X"})
 
-    exact_with_extra = FeatureCondition(
+    exact_with_extra = NestedValueCondition(
         mode=ConditionMode.EXACT,
         required={"Case": "Gen"},
         forbidden={"Polarity": "Neg"},
@@ -131,8 +131,8 @@ def test_featurecondition_allow_missing_and_extra_keys() -> None:
     assert exact_with_extra.matches({"Case": "Gen", "Other": "X"})
 
 
-def test_featurecondition_negation_and_wildcard() -> None:
-    neg = FeatureCondition(
+def test_nestedvaluecondition_negation_and_wildcard() -> None:
+    neg = NestedValueCondition(
         mode=ConditionMode.NEGATION,
         required={"Case": "Gen", "Number": "Sing"},
         forbidden={"Polarity": "Neg"},
@@ -142,14 +142,14 @@ def test_featurecondition_negation_and_wildcard() -> None:
     assert neg.matches({"Case": "Gen", "Number": "Plur"})
     assert not neg.matches({"Case": "Gen", "Number": "Plur", "Polarity": "Neg"})
 
-    wildcard = FeatureCondition(mode=ConditionMode.WILDCARD)
+    wildcard = NestedValueCondition(mode=ConditionMode.WILDCARD)
     # Check: wildcard accepts any dict or None
     assert wildcard.matches({"anything": "goes"})
     assert wildcard.matches(None)
 
 
-def test_featurecondition_normalizer_and_constructor_validation() -> None:
-    norm_cond = FeatureCondition(
+def test_nestedvaluecondition_normalizer_and_constructor_validation() -> None:
+    norm_cond = NestedValueCondition(
         mode=ConditionMode.EXACT,
         required={"Case": "gEn"},
         forbidden={"Polarity": "nEg"},
@@ -161,20 +161,20 @@ def test_featurecondition_normalizer_and_constructor_validation() -> None:
 
     # Check: constructor validation for required args and normalizer type
     with pytest.raises(ValueError):
-        FeatureCondition(mode=ConditionMode.EXACT)
+        NestedValueCondition(mode=ConditionMode.EXACT)
     with pytest.raises(ValueError):
-        FeatureCondition(mode=ConditionMode.WILDCARD, required={"Case": "Gen"})
+        NestedValueCondition(mode=ConditionMode.WILDCARD, required={"Case": "Gen"})
     with pytest.raises(TypeError):
         bad_normalizer = cast(Any, "not-callable")
-        FeatureCondition(
+        NestedValueCondition(
             mode=ConditionMode.EXACT,
             required={"Case": "Gen"},
             normalizer=bad_normalizer,
         )
 
 
-def test_featurecondition_nested_and_string_structures() -> None:
-    nested = FeatureCondition(
+def test_nestedvaluecondition_nested_and_string_structures() -> None:
+    nested = NestedValueCondition(
         mode=ConditionMode.EXACT,
         required={
             "Case": {"primary": "Gen", "alternatives": ["Gen", "Nom"]},
@@ -198,7 +198,7 @@ def test_featurecondition_nested_and_string_structures() -> None:
         }
     )
 
-    list_pattern = FeatureCondition(
+    list_pattern = NestedValueCondition(
         mode=ConditionMode.MEMBERSHIP,
         required=[{"Case": "Gen"}, {"Number": "Sing"}],
     )
@@ -206,7 +206,7 @@ def test_featurecondition_nested_and_string_structures() -> None:
     assert list_pattern.matches([{"Case": "Gen"}, {"Number": "Plur"}])
     assert not list_pattern.matches([{"Case": "Part"}, {"Number": "Plur"}])
 
-    string_feats = FeatureCondition(
+    string_feats = NestedValueCondition(
         mode=ConditionMode.EXACT,
         required="_",
         allow_missing=True,
@@ -252,11 +252,13 @@ def test_nodeconstraint_happy_path_and_scalar_mismatch() -> None:
             "lemma": ValueCondition(ConditionMode.EXACT, "lendur"),
             "deprel": ValueCondition(ConditionMode.EXACT, "nmod"),
         },
-        feats_condition=FeatureCondition(
-            mode=ConditionMode.EXACT,
-            required={"sg": "sg", "n": "n"},
-            allow_extra_keys=True,
-        ),
+        nested_attribute_conditions={
+            "feats": NestedValueCondition(
+                mode=ConditionMode.EXACT,
+                required={"sg": "sg", "n": "n"},
+                allow_extra_keys=True,
+            )
+        },
     )
     # Check: a node matching all attribute and feat constraints succeeds
     assert constraint.matches(node)
@@ -275,11 +277,13 @@ def test_nodeconstraint_feature_mismatch_and_predicates() -> None:
             "lemma": ValueCondition(ConditionMode.EXACT, "lendur"),
             "deprel": ValueCondition(ConditionMode.EXACT, "nmod"),
         },
-        feats_condition=FeatureCondition(
-            mode=ConditionMode.EXACT,
-            required={"sg": "sg", "n": "n"},
-            allow_extra_keys=True,
-        ),
+        nested_attribute_conditions={
+            "feats": NestedValueCondition(
+                mode=ConditionMode.EXACT,
+                required={"sg": "sg", "n": "n"},
+                allow_extra_keys=True,
+            )
+        },
     )
     feature_mismatch_node = make_node(
         upostag="NOUN",
@@ -316,9 +320,11 @@ def test_nodeconstraint_selectivity_describe_and_validation() -> None:
     exact_upos_plus_feats = NodeConstraint(
         role="c",
         attribute_conditions={"upostag": ValueCondition(ConditionMode.EXACT, "NOUN")},
-        feats_condition=FeatureCondition(
-            mode=ConditionMode.EXACT, required={"sg": "sg"}, allow_extra_keys=True
-        ),
+        nested_attribute_conditions={
+            "feats": NestedValueCondition(
+                mode=ConditionMode.EXACT, required={"sg": "sg"}, allow_extra_keys=True
+            )
+        },
     )
     # Check: selectivity scoring increases with added constraints
     assert unconstrained.score_selectivity() < exact_upos.score_selectivity()
@@ -327,14 +333,16 @@ def test_nodeconstraint_selectivity_describe_and_validation() -> None:
     constraint = NodeConstraint(
         role="target",
         attribute_conditions={"upostag": ValueCondition(ConditionMode.EXACT, "NOUN")},
-        feats_condition=FeatureCondition(
-            mode=ConditionMode.EXACT, required={"sg": "sg"}, allow_extra_keys=True
-        ),
+        nested_attribute_conditions={
+            "feats": NestedValueCondition(
+                mode=ConditionMode.EXACT, required={"sg": "sg"}, allow_extra_keys=True
+            )
+        },
     )
     desc = constraint.describe()
     # Check: describe includes role, attribute and feat info
     assert "Role: target" in desc
-    assert "Attribute 'upostag':" in desc and "Feats:" in desc
+    assert "Attribute 'upostag':" in desc and "Nested 'feats':" in desc
 
     # Check: constructor validation for role and types
     with pytest.raises(TypeError):
@@ -343,8 +351,10 @@ def test_nodeconstraint_selectivity_describe_and_validation() -> None:
         bad_attribute_conditions = cast(Any, {"upostag": "not-a-valuecondition"})
         NodeConstraint(role="bad_upos", attribute_conditions=bad_attribute_conditions)
     with pytest.raises(TypeError):
-        bad_feats_condition = cast(Any, "not-a-featurecondition")
-        NodeConstraint(role="bad_feats", feats_condition=bad_feats_condition)
+        bad_feats_condition = cast(Any, {"feats": "not-a-nestedvaluecondition"})
+        NodeConstraint(
+            role="bad_feats", nested_attribute_conditions=bad_feats_condition
+        )
     with pytest.raises(TypeError):
         bad_predicates = cast(Any, [lambda n: True])
         NodeConstraint(role="bad_preds", extra_predicates=bad_predicates)
@@ -361,12 +371,12 @@ def test_nodeconstraint_selectivity_describe_and_validation() -> None:
 
 
 def test_nodeconstraint_feats_allowed_in_attribute_conditions() -> None:
-    """Ensure that `attribute_conditions` can contain a FeatureCondition under 'feats'."""
+    """Ensure that nested_attribute_conditions can contain a NestedValueCondition under 'feats'."""
     node = make_node(feats={"sg": "sg", "n": "n"})
     constraint = NodeConstraint(
         role="feat_attr",
-        attribute_conditions={
-            "feats": FeatureCondition(
+        nested_attribute_conditions={
+            "feats": NestedValueCondition(
                 mode=ConditionMode.EXACT,
                 required={"sg": "sg", "n": "n"},
                 allow_extra_keys=True,
@@ -374,7 +384,6 @@ def test_nodeconstraint_feats_allowed_in_attribute_conditions() -> None:
         },
     )
     assert constraint.matches(node)
-
 
 
 # EdgeConstraint class testing

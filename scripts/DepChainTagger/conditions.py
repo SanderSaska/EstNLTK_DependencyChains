@@ -7,7 +7,6 @@ from typing import (
     Self,
     Any,
     Callable,
-    Union,
 )
 from dataclasses import dataclass
 
@@ -47,8 +46,7 @@ def _normalize_recursive(value: Any, normalizer: Optional[Callable[[Any], Any]])
         return value
     if isinstance(value, Mapping):
         return {
-            key: _normalize_recursive(child, normalizer)
-            for key, child in value.items()
+            key: _normalize_recursive(child, normalizer) for key, child in value.items()
         }
     if isinstance(value, list):
         return [_normalize_recursive(child, normalizer) for child in value]
@@ -88,7 +86,9 @@ def _feature_exact_match(
         return True
 
     if isinstance(expected_value, tuple):
-        if not isinstance(actual_value, tuple) or len(actual_value) != len(expected_value):
+        if not isinstance(actual_value, tuple) or len(actual_value) != len(
+            expected_value
+        ):
             return False
         return all(
             _feature_exact_match(
@@ -98,7 +98,9 @@ def _feature_exact_match(
         )
 
     if isinstance(expected_value, list):
-        if not isinstance(actual_value, list) or len(actual_value) != len(expected_value):
+        if not isinstance(actual_value, list) or len(actual_value) != len(
+            expected_value
+        ):
             return False
         return all(
             _feature_exact_match(
@@ -191,9 +193,8 @@ class ValueCondition:
     - **WILDCARD**: Any attribute value matches (``value`` must be None).
     - **MEMBERSHIP**: The actual (scalar) attribute value must be in the iterable ``value``.
       The *condition* holds a collection; the *attribute* is scalar.
-        - **NOT_MEMBERSHIP**: The actual (scalar) attribute value must not be in the iterable
-            ``value``.
-        - **REGEX**: The text representation of the actual value must match the provided
+    - **NOT_MEMBERSHIP**: The actual (scalar) attribute value must not be in the iterable ``value``.
+    - **REGEX**: The text representation of the actual value must match the provided
             regular-expression pattern.
 
     ## Methods:
@@ -360,7 +361,7 @@ class ValueCondition:
 
 
 @dataclass(frozen=True, slots=True)
-class FeatureCondition:
+class NestedValueCondition:
     """
     Match a nested feature structure using exact, negation, membership, or wildcard logic.
 
@@ -379,8 +380,8 @@ class FeatureCondition:
     - **normalizer** (`Optional[Callable[[Any], Any]]`, optional): An optional function to normalize both the expected values and the actual values before comparison. This can be used to implement case-insensitive matching, for example.
     Defaults to None (no normalization).
     ## Methods:
-    - :func:`~FeatureCondition.matches`: Checks whether a given actual features dictionary satisfies this condition.
-    - :func:`~FeatureCondition.describe`: Returns a human-readable explanation of the condition.
+    - :func:`~NestedValueCondition.matches`: Checks whether a given actual features dictionary satisfies this condition.
+    - :func:`~NestedValueCondition.describe`: Returns a human-readable explanation of the condition.
     """
 
     mode: ConditionMode
@@ -395,6 +396,8 @@ class FeatureCondition:
         """
         Validate config and pre-normalise expected values once.
         """
+        
+
         self._validate_or_raise()
 
         if self.normalizer is not None:
@@ -433,7 +436,9 @@ class FeatureCondition:
 
         if self.mode is ConditionMode.EXACT:
             if self.required is not None:
-                if isinstance(actual_value, Mapping) and isinstance(self.required, Mapping):
+                if isinstance(actual_value, Mapping) and isinstance(
+                    self.required, Mapping
+                ):
                     required_keys = set(self.required.keys())
                     forbidden_keys = (
                         set(self.forbidden.keys())
@@ -502,9 +507,7 @@ class FeatureCondition:
         if self.mode is ConditionMode.EXACT:
             return f"Features must match {self.required!r} and avoid {self.forbidden!r}"
         if self.mode is ConditionMode.NEGATION:
-            return (
-                f"Features must not match {self.required!r}; and must not include {self.forbidden!r}"
-            )
+            return f"Features must not match {self.required!r}; and must not include {self.forbidden!r}"
         if self.mode is ConditionMode.MEMBERSHIP:
             parts = []
             if self.required is not None:
@@ -560,10 +563,12 @@ class FeatureCondition:
 
         if self.mode is ConditionMode.REGEX:
             raise ValueError(
-                "REGEX mode is a scalar ValueCondition mode and is not supported by FeatureCondition."
+                "REGEX mode is a scalar ValueCondition mode and is not supported by NestedValueCondition."
             )
 
-        if self.allow_extra_keys is not None and not isinstance(self.allow_extra_keys, bool):
+        if self.allow_extra_keys is not None and not isinstance(
+            self.allow_extra_keys, bool
+        ):
             raise TypeError("allow_extra_keys must be a boolean value or None.")
 
         if self.allow_missing is not None and not isinstance(self.allow_missing, bool):
@@ -583,8 +588,8 @@ class NodeConstraint:
 
     ## Attributes:
     - **role** (`str`): The role of the node in the dependency chain (e.g., "self", "parent", "child", "sibling", etc.).
-    - **attribute_conditions** (`Optional[Dict[str, ValueCondition]]`): An optional dictionary mapping attribute names to `ValueCondition` objects. These are intended only for scalar attributes (e.g. `upostag`, `lemma`, `deprel`). Do not use `attribute_conditions` for dict-valued attributes such as `feats` — use `feats_condition` instead. Each key is an attribute name that will be looked up on the node annotation via ``getattr(node_annotation, key, None)``, and the retrieved value is matched against the corresponding condition.
-    - **feats_condition** (`Optional[FeatureCondition]`): An optional FeatureCondition to match the morphological features (feats) of the node. This remains a dedicated field because ``feats`` is a dictionary that requires ``FeatureCondition`` (with required/forbidden semantics), not ``ValueCondition``.
+    - **attribute_conditions** (`Optional[Dict[str, ValueCondition]]`): An optional dictionary mapping attribute names to `ValueCondition` objects. These are intended only for scalar attributes (e.g. `upostag`, `lemma`, `deprel`). Each key is an attribute name that will be looked up on the node annotation via ``getattr(node_annotation, key, None)``, and the retrieved value is matched against the corresponding condition.
+    - **nested_attribute_conditions** (`Optional[Dict[str, NestedValueCondition]]`): An optional dictionary mapping attribute names that hold nested/dict-like values (e.g. `feats`) to `NestedValueCondition` objects. Use this to express constraints over nested attribute structures. Do not use `attribute_conditions` for dict-valued attributes.
     - **extra_predicates** (`Optional[Tuple[NodePredicate, ...]]`): An optional tuple of additional callables that take the node annotation as input and return a boolean indicating whether the node satisfies some custom condition. These can be used for more complex checks that are not easily expressed with the other conditions.
 
     ## Methods:
@@ -594,24 +599,28 @@ class NodeConstraint:
     """
 
     role: str
-    attribute_conditions: Optional[Dict[str, Union[ValueCondition, FeatureCondition]]] = None
-    feats_condition: Optional[FeatureCondition] = None
+    attribute_conditions: Optional[Dict[str, ValueCondition]] = None
+    # Nested-structure attribute conditions (e.g. `feats`) mapped by attribute name.
+    nested_attribute_conditions: Optional[Dict[str, NestedValueCondition]] = None
     extra_predicates: Optional[Tuple[NodePredicate, ...]] = None
 
     def __post_init__(self: Self) -> None:
         """
         Validate config and pre-normalise expected values once.
         """
-        # If a dedicated feats_condition is provided, expose it via
-        # attribute_conditions under the key 'feats' so matching logic
-        # can uniformly consult attribute_conditions. Keep the original
-        # `feats_condition` field for backwards compatibility and
-        # descriptive output.
-        if self.feats_condition is not None:
-            ac: Dict[str, Any] = dict(self.attribute_conditions) if self.attribute_conditions else {}
-            if "feats" not in ac:
-                ac["feats"] = self.feats_condition
-            object.__setattr__(self, "attribute_conditions", ac)
+        # Enforce strict typing for nested_attribute_conditions early so
+        # callers receive immediate, predictable TypeErrors when they pass
+        # incorrect values (tests expect this behavior).
+        if self.nested_attribute_conditions is not None:
+            if not isinstance(self.nested_attribute_conditions, dict):
+                raise TypeError(
+                    "nested_attribute_conditions must be a dict mapping attribute names to NestedValueCondition instances"
+                )
+            for key, cond in self.nested_attribute_conditions.items():
+                if not isinstance(cond, NestedValueCondition):
+                    raise TypeError(
+                        f"Each value in nested_attribute_conditions must be NestedValueCondition, got {type(cond).__name__} for key '{key}'"
+                    )
 
         self._validate_or_raise()
 
@@ -635,15 +644,13 @@ class NodeConstraint:
                 actual_value = getattr(node_annotation, attr_name, None)
                 if not condition.matches(actual_value):
                     return False
-        # If feats_condition was merged into attribute_conditions under 'feats',
-        # the check has already been performed above. Only run the dedicated
-        # feats_condition check when no 'feats' attribute_condition exists.
-        if self.feats_condition and not (
-            self.attribute_conditions and "feats" in self.attribute_conditions
-        ):
-            feats = getattr(node_annotation, "feats", None)
-            if not self.feats_condition.matches(feats):
-                return False
+
+        # Check nested-structure attribute conditions (e.g. feats)
+        if self.nested_attribute_conditions:
+            for attr_name, condition in self.nested_attribute_conditions.items():
+                actual_value = getattr(node_annotation, attr_name, None)
+                if not condition.matches(actual_value):
+                    return False
         if self.extra_predicates:
             for pred in self.extra_predicates:
                 if not pred(node_annotation):
@@ -661,40 +668,29 @@ class NodeConstraint:
         # Exact > Membership ≈ Regex > Negation > Wildcard(0.0) in terms of selectivity
         if self.attribute_conditions:
             for cond in self.attribute_conditions.values():
-                # cond may be ValueCondition or FeatureCondition
-                if isinstance(cond, FeatureCondition):
-                    if cond.mode == ConditionMode.EXACT:
-                        score += SELECTIVITY_WEIGHT_EXACT
-                    elif cond.mode == ConditionMode.MEMBERSHIP:
-                        score += SELECTIVITY_WEIGHT_MEMBERSHIP
-                    elif cond.mode == ConditionMode.NOT_MEMBERSHIP:
-                        score += SELECTIVITY_WEIGHT_MEMBERSHIP
-                    elif cond.mode == ConditionMode.NEGATION:
-                        score += SELECTIVITY_WEIGHT_NEGATION
-                else:
-                    if cond.mode == ConditionMode.EXACT:
-                        score += SELECTIVITY_WEIGHT_EXACT
-                    elif cond.mode == ConditionMode.MEMBERSHIP:
-                        score += SELECTIVITY_WEIGHT_MEMBERSHIP
-                    elif cond.mode == ConditionMode.NOT_MEMBERSHIP:
-                        score += SELECTIVITY_WEIGHT_MEMBERSHIP
-                    elif cond.mode == ConditionMode.REGEX:
-                        score += SELECTIVITY_WEIGHT_REGEX
-                    elif cond.mode == ConditionMode.NEGATION:
-                        score += SELECTIVITY_WEIGHT_NEGATION
-        if self.feats_condition is not None:
-            # If feats_condition was merged into attribute_conditions (key 'feats'),
-            # it has already been counted above. Only count it here when the
-            # attribute_conditions does not contain a 'feats' key.
-            if not (self.attribute_conditions and "feats" in self.attribute_conditions):
-                if self.feats_condition.mode == ConditionMode.EXACT:
+                if cond.mode == ConditionMode.EXACT:
                     score += SELECTIVITY_WEIGHT_EXACT
-                elif self.feats_condition.mode == ConditionMode.MEMBERSHIP:
+                elif cond.mode == ConditionMode.MEMBERSHIP:
                     score += SELECTIVITY_WEIGHT_MEMBERSHIP
-                elif self.feats_condition.mode == ConditionMode.NOT_MEMBERSHIP:
+                elif cond.mode == ConditionMode.NOT_MEMBERSHIP:
                     score += SELECTIVITY_WEIGHT_MEMBERSHIP
-                elif self.feats_condition.mode == ConditionMode.NEGATION:
+                elif cond.mode == ConditionMode.REGEX:
+                    score += SELECTIVITY_WEIGHT_REGEX
+                elif cond.mode == ConditionMode.NEGATION:
                     score += SELECTIVITY_WEIGHT_NEGATION
+
+        if self.nested_attribute_conditions:
+            for cond in self.nested_attribute_conditions.values():
+                if cond.mode == ConditionMode.EXACT:
+                    score += SELECTIVITY_WEIGHT_EXACT
+                elif cond.mode == ConditionMode.MEMBERSHIP:
+                    score += SELECTIVITY_WEIGHT_MEMBERSHIP
+                elif cond.mode == ConditionMode.NOT_MEMBERSHIP:
+                    score += SELECTIVITY_WEIGHT_MEMBERSHIP
+                elif cond.mode == ConditionMode.NEGATION:
+                    score += SELECTIVITY_WEIGHT_NEGATION
+
+        # nested_attribute_conditions already counted above when present
         if self.extra_predicates:
             score += SELECTIVITY_WEIGHT_EXTRA_PREDICATE * len(self.extra_predicates)
 
@@ -711,8 +707,9 @@ class NodeConstraint:
         if self.attribute_conditions:
             for attr_name, condition in self.attribute_conditions.items():
                 parts.append(f"Attribute '{attr_name}': {condition.describe()}")
-        if self.feats_condition:
-            parts.append(f"Feats: {self.feats_condition.describe()}")
+        if self.nested_attribute_conditions:
+            for attr_name, condition in self.nested_attribute_conditions.items():
+                parts.append(f"Nested '{attr_name}': {condition.describe()}")
         if self.extra_predicates:
             parts.append(
                 f"Extra predicates: {len(self.extra_predicates)} predicates defined"
@@ -729,7 +726,7 @@ class NodeConstraint:
         if self.attribute_conditions is not None:
             if not isinstance(self.attribute_conditions, dict):
                 raise TypeError(
-                    "attribute_conditions must be a Dict[str, ValueCondition|FeatureCondition] or None."
+                    "attribute_conditions must be a Dict[str, ValueCondition|NestedValueCondition] or None."
                 )
             for key, cond in self.attribute_conditions.items():
                 if not isinstance(key, str) or key.strip() == "":
@@ -737,19 +734,21 @@ class NodeConstraint:
                         "Each key in attribute_conditions must be a non-empty string."
                     )
                 # Accept either ValueCondition or FeatureCondition as a value.
-                if not isinstance(cond, (ValueCondition, FeatureCondition)):
+                if not isinstance(cond, (ValueCondition, NestedValueCondition)):
                     raise TypeError(
-                        f"Each value in attribute_conditions must be ValueCondition or FeatureCondition, "
+                        f"Each value in attribute_conditions must be ValueCondition or NestedValueCondition, "
                         f"got {type(cond).__name__} for key '{key}'."
                     )
                 # Disallow dict-valued expected values on ValueCondition entries to
                 # avoid confusing use for dict-like attributes (e.g. `feats`).
-                if isinstance(cond, ValueCondition) and getattr(cond, "value", None) is not None and isinstance(
-                    cond.value, dict
+                if (
+                    isinstance(cond, ValueCondition)
+                    and getattr(cond, "value", None) is not None
+                    and isinstance(cond.value, dict)
                 ):
                     raise ValueError(
                         f"attribute_conditions entry '{key}' has a dict-valued expected "
-                        "value; use FeatureCondition for dict-valued attributes."
+                        "value; use NestedValueCondition for dict-valued attributes."
                     )
             # Reject attribute names that must use a different condition type
             # or are handled by dedicated non-condition fields.
@@ -760,7 +759,9 @@ class NodeConstraint:
                 invalid_reserved = {
                     attr
                     for attr in overlapping
-                    if not isinstance(self.attribute_conditions.get(attr), FeatureCondition)
+                    if not isinstance(
+                        self.attribute_conditions.get(attr), NestedValueCondition
+                    )
                 }
                 if invalid_reserved:
                     details = {
@@ -773,11 +774,6 @@ class NodeConstraint:
                         f"handled by dedicated fields: {details}. "
                         f"Use the dedicated fields instead."
                     )
-
-        if self.feats_condition is not None and not isinstance(
-            self.feats_condition, FeatureCondition
-        ):
-            raise TypeError("feats_condition must be FeatureCondition or None.")
 
         if self.extra_predicates is not None:
             if not isinstance(self.extra_predicates, tuple):
@@ -816,6 +812,7 @@ class EdgeConstraint:
 
     direction: DirectionMode
     attribute_conditions: Optional[Dict[str, ValueCondition]] = None
+    nested_attribute_conditions: Optional[Dict[str, NestedValueCondition]] = None
     min_hops: Optional[int] = 1
     max_hops: Optional[int] = 1
 
@@ -842,6 +839,12 @@ class EdgeConstraint:
         # Check attribute conditions (e.g. deprel, or any future edge attribute)
         if self.attribute_conditions:
             for attr_name, condition in self.attribute_conditions.items():
+                actual_value = getattr(edge_context, attr_name, None)
+                if not condition.matches(actual_value):
+                    return False
+        # Check nested-structure attribute conditions (if present)
+        if self.nested_attribute_conditions:
+            for attr_name, condition in self.nested_attribute_conditions.items():
                 actual_value = getattr(edge_context, attr_name, None)
                 if not condition.matches(actual_value):
                     return False
@@ -921,10 +924,24 @@ class EdgeConstraint:
                     f"{details}. Use the dedicated fields instead."
                 )
 
+        if self.nested_attribute_conditions is not None:
+            if not isinstance(self.nested_attribute_conditions, dict):
+                raise TypeError(
+                    "nested_attribute_conditions must be a Dict[str, NestedValueCondition] or None."
+                )
+            for key, cond in self.nested_attribute_conditions.items():
+                if not isinstance(key, str) or key.strip() == "":
+                    raise TypeError(
+                        "Each key in nested_attribute_conditions must be a non-empty string."
+                    )
+                if not isinstance(cond, NestedValueCondition):
+                    raise TypeError(
+                        f"Each value in nested_attribute_conditions must be NestedValueCondition, got {type(cond).__name__} for key '{key}'."
+                    )
+
         if self.min_hops is not None:
             if not isinstance(self.min_hops, int) or self.min_hops < 0:
                 raise ValueError("min_hops must be a non-negative integer or None.")
-
         if self.max_hops is not None:
             if not isinstance(self.max_hops, int) or self.max_hops < 0:
                 raise ValueError("max_hops must be a non-negative integer or None.")
