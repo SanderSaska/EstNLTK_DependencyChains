@@ -39,6 +39,8 @@ class DepChainTagger(RelationTagger):
 
     conf_param = [
         "patterns",
+        "syntax_layer",
+        "sentences_layer",
         "output_layer",
         "output_span_names",
         "output_attributes",
@@ -56,6 +58,8 @@ class DepChainTagger(RelationTagger):
     def __init__(
         self: Self,
         patterns: Tuple[PathPattern, ...],
+        syntax_layer: str = DEFAULT_SYNTAX_LAYER_NAME,
+        sentences_layer: str = DEFAULT_SENTENCES_LAYER_NAME,
         output_layer: str = DEFAULT_OUTPUT_LAYER_NAME,
         output_attributes: Optional[Tuple[str, ...]] = None,
         include_pattern_constraints: bool = False,
@@ -70,7 +74,9 @@ class DepChainTagger(RelationTagger):
         max_total_matches: int = DEFAULT_MAX_TOTAL_MATCHES,
     ) -> None:
 
-        self.input_layers = (DEFAULT_SYNTAX_LAYER_NAME, DEFAULT_SENTENCES_LAYER_NAME)
+        self.syntax_layer = syntax_layer
+        self.sentences_layer = sentences_layer
+        self.input_layers = (self.syntax_layer, self.sentences_layer)
         self.output_layer = output_layer
         self.include_pattern_constraints = include_pattern_constraints
         self.output_span_names = collect_role_span_names(patterns)
@@ -124,16 +130,16 @@ class DepChainTagger(RelationTagger):
 
         if (
             layers is None
-            or DEFAULT_SYNTAX_LAYER_NAME not in layers
-            or DEFAULT_SENTENCES_LAYER_NAME not in layers
+            or self.syntax_layer not in layers
+            or self.sentences_layer not in layers
         ):
             return layer
 
-        sentences_layer = layers[DEFAULT_SENTENCES_LAYER_NAME]
+        sentences_layer = layers[self.sentences_layer]
 
         try:
             top_level_syntax = (
-                layers.get(DEFAULT_SYNTAX_LAYER_NAME)
+                layers.get(self.syntax_layer)
                 if hasattr(layers, "get")
                 else None
             )
@@ -141,10 +147,10 @@ class DepChainTagger(RelationTagger):
             sentence_spans = [(s.start, s.end) for s in sentences_layer]
             for sent in sentences_layer:
                 try:
-                    sent_syntax = sent[DEFAULT_SYNTAX_LAYER_NAME]
+                    sent_syntax = sent[self.syntax_layer]
                 except Exception:
                     if top_level_syntax is None:
-                        raise KeyError(DEFAULT_SYNTAX_LAYER_NAME)
+                        raise KeyError(self.syntax_layer)
                     sent_syntax = [
                         ann
                         for ann in top_level_syntax

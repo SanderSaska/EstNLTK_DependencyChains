@@ -60,3 +60,17 @@ def test_constructor_validation():
     # Check: duplicate patterns are rejected
     with pytest.raises(ValueError):
         DepChildTagger(patterns=(pattern, pattern))
+
+
+def test_constructor_accepts_custom_input_layer_names():
+    pattern = build_child_pattern("base_p")
+
+    tagger = DepChildTagger(
+        patterns=(pattern,),
+        syntax_layer="v172_stanza_syntax",
+        sentences_layer="sentences",
+    )
+
+    assert tagger.syntax_layer == "v172_stanza_syntax"
+    assert tagger.sentences_layer == "sentences"
+    assert tagger.input_layers == ("v172_stanza_syntax", "sentences")
