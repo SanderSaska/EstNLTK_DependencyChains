@@ -13,7 +13,7 @@ from .patterns import ChainMatch, MatchCollector
 
 
 @dataclass(slots=True)
-class PhraseDecorator:
+class OutputAnnotationDecorator:
     """
     Transform `ChainMatch` objects into output rows for downstream layers.
 

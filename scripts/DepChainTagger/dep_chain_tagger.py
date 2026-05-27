@@ -1,5 +1,6 @@
 from typing import (
     Any,
+    Callable,
     Dict,
     Literal,
     List,
@@ -31,10 +32,66 @@ from .output_utils import (
 )
 
 
+class AnnotationDecorator:
+    """Apply notebook-style filtering or updates to one relation annotation."""
+
+    def __init__(
+        self,
+        decorator: Optional[
+            Callable[[Text, Dict[str, Any], Dict[str, Any]], Optional[Dict[str, Any]]]
+        ] = None,
+    ) -> None:
+        self.decorator = decorator
+
+    def decorate(
+        self,
+        text: Text,
+        base_span: Dict[str, Any],
+        annotation: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Return an updated annotation or None to drop the match."""
+        if self.decorator is None:
+            return annotation
+        return self.decorator(text, base_span, annotation)
+
+    def __call__(
+        self,
+        text: Text,
+        base_span: Dict[str, Any],
+        annotation: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        return self.decorate(text, base_span, annotation)
+
+
 class DepChainTagger(RelationTagger):
     """EstNLTK RelationTagger wrapper for dependency-chain matches.
 
-    This tagger takes a set of `PathPattern` objects, finds all matches in the input text, and produces a RelationLayer where each relation corresponds to one match. The relation's attributes include token-level information for each role in the match, as well as metadata about the pattern and sentence. The tagger supports configurable deduplication strategies to control the number of matches emitted per sentence and across the entire text.
+    Args:
+        patterns: Dependency-chain patterns to evaluate.
+        syntax_layer: Name of the syntax layer used as input.
+        sentences_layer: Name of the sentence layer used to split the text.
+        output_layer: Name of the output relation layer.
+        output_attributes: Optional relation attributes to expose.
+        annotation_decorator: Optional annotation decorator that can update
+            or filter relation payloads before insertion.
+        include_pattern_constraints: Whether to flatten pattern constraint
+            metadata into the output relation rows.
+        max_matches_per_sentence: Maximum number of matches to keep per
+            sentence before global aggregation.
+        allow_role_node_overlap: Whether the matcher may reuse the same node
+            for multiple roles in one pattern.
+        max_total_matches: Global cap on the number of accepted matches.
+        sentence_match_dedup_mode: Deduplication mode applied within a
+            sentence.
+        global_dedup_mode: Deduplication mode applied across sentences.
+
+    This tagger takes a set of `PathPattern` objects, finds all matches in the
+    input text, and produces a RelationLayer where each relation corresponds
+    to one match. The relation's attributes include token-level information
+    for each role in the match, as well as metadata about the pattern and
+    sentence. The tagger supports configurable deduplication strategies to
+    control the number of matches emitted per sentence and across the entire
+    text.
     """
 
     conf_param = [
@@ -44,12 +101,13 @@ class DepChainTagger(RelationTagger):
         "output_layer",
         "output_span_names",
         "output_attributes",
+        "annotation_decorator",
         "include_pattern_constraints",
-        "sentence_match_dedup_mode",
         "max_matches_per_sentence",
         "allow_role_node_overlap",
-        "global_dedup_mode",
         "max_total_matches",
+        "sentence_match_dedup_mode",
+        "global_dedup_mode",
         "_depchain_tagger",
         "_pattern_by_name",
         # "_pattern_span_name_by_pattern",
@@ -62,16 +120,17 @@ class DepChainTagger(RelationTagger):
         sentences_layer: str = DEFAULT_SENTENCES_LAYER_NAME,
         output_layer: str = DEFAULT_OUTPUT_LAYER_NAME,
         output_attributes: Optional[Tuple[str, ...]] = None,
+        annotation_decorator: Optional[AnnotationDecorator] = None,
         include_pattern_constraints: bool = False,
+        max_matches_per_sentence: int = DEFAULT_MAX_MATCHES_PER_SENTENCE,
+        allow_role_node_overlap: bool = False,
+        max_total_matches: int = DEFAULT_MAX_TOTAL_MATCHES,
         sentence_match_dedup_mode: Literal["none", "exact", "role_based"] = cast(
             Literal["none", "exact", "role_based"], DEFAULT_DEDUP_MODE_SENTENCE
         ),
-        max_matches_per_sentence: int = DEFAULT_MAX_MATCHES_PER_SENTENCE,
-        allow_role_node_overlap: bool = False,
         global_dedup_mode: Literal["none", "exact", "role_based"] = cast(
             Literal["none", "exact", "role_based"], DEFAULT_DEDUP_MODE_GLOBAL
         ),
-        max_total_matches: int = DEFAULT_MAX_TOTAL_MATCHES,
     ) -> None:
 
         self.syntax_layer = syntax_layer
@@ -96,6 +155,7 @@ class DepChainTagger(RelationTagger):
             global_dedup_mode=global_dedup_mode,
             max_total_matches=max_total_matches,
         )
+        self.annotation_decorator = annotation_decorator or AnnotationDecorator()
 
         seen_pattern_names: set[str] = set()
         for pattern in patterns:
@@ -139,9 +199,7 @@ class DepChainTagger(RelationTagger):
 
         try:
             top_level_syntax = (
-                layers.get(self.syntax_layer)
-                if hasattr(layers, "get")
-                else None
+                layers.get(self.syntax_layer) if hasattr(layers, "get") else None
             )
             sentence_syntax_layers: List[Any] = []
             sentence_spans = [(s.start, s.end) for s in sentences_layer]
@@ -188,10 +246,20 @@ class DepChainTagger(RelationTagger):
         if match.pattern_name not in self._pattern_by_name:
             raise KeyError(f"Unknown pattern name: {match.pattern_name!r}")
 
+        if layer.text_object is None:
+            raise RuntimeError("Relation layer is missing the source text object.")
+
         annotation_payload = build_match_annotation_payload(
             match=match,
             patterns_by_name=self._pattern_by_name,
             span_names=self.output_span_names,
             include_pattern_constraints=self.include_pattern_constraints,
         )
-        layer.add_annotation(annotation_payload)
+        decorated_payload = self.annotation_decorator.decorate(
+            text=cast(Text, layer.text_object),
+            base_span=dict(match.role_to_node),
+            annotation=annotation_payload,
+        )
+        if decorated_payload is None:
+            return
+        layer.add_annotation(decorated_payload)

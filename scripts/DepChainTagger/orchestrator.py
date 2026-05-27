@@ -14,7 +14,7 @@ from .graph import SyntaxGraphIndex
 from .patterns import PathPattern
 from .matcher import DepChainMatcher
 from .patterns import MatchCollector, ChainMatch
-from .decorator import PhraseDecorator
+from .decorator import OutputAnnotationDecorator
 
 from .config import (
     DEFAULT_MAX_MATCHES_PER_SENTENCE,
@@ -34,12 +34,12 @@ class DepTaggerOrchestrator:
     1. build sentence-level `SyntaxGraphIndex` objects,
     2. run `DepChainMatcher` on each sentence,
     3. optionally deduplicate across all sentence matches,
-    4. transform matches into relational output rows with `PhraseDecorator`.
+    4. transform matches into relational output rows with `OutputAnnotationDecorator`.
 
     ## Attributes:
     - **patterns** (`Tuple[PathPattern, ...]`): A tuple of PathPattern objects that define the patterns to match against the syntax graphs.
     - **matcher** (`Optional[DepChainMatcher]`): Optional pre-configured matcher instance. If None, a default matcher will be constructed from `patterns` and related configuration.
-    - **decorator** (`Optional[PhraseDecorator]`): Optional pre-configured decorator instance. If None, a default decorator with standard settings will be constructed.
+    - **decorator** (`Optional[OutputAnnotationDecorator]`): Optional pre-configured decorator instance. If None, a default decorator with standard settings will be constructed.
     - **sentence_match_dedup_mode** (`str`): Deduplication mode to apply within each sentence's matches. Allowed values are "none", "exact", and "role_based". This controls how matches that are similar within the same sentence are filtered before being returned.
     - **max_matches_per_sentence** (`int`): Maximum number of matches to accept for each individual sentence. This can help prevent combinatorial explosion in very complex sentences.
     - **allow_role_node_overlap** (`bool`): Whether to allow matches where the same node in the syntax graph is assigned to multiple roles in the pattern. This setting is passed down to the matcher and can help control match quality.
@@ -49,7 +49,7 @@ class DepTaggerOrchestrator:
 
     patterns: Tuple[PathPattern, ...]
     matcher: Optional[Any] = None
-    decorator: Optional[PhraseDecorator] = None
+    decorator: Optional[OutputAnnotationDecorator] = None
     sentence_match_dedup_mode: str = DEFAULT_DEDUP_MODE_SENTENCE
     max_matches_per_sentence: int = DEFAULT_MAX_MATCHES_PER_SENTENCE
     allow_role_node_overlap: bool = False
@@ -71,7 +71,7 @@ class DepTaggerOrchestrator:
             )
 
         if self.decorator is None:
-            self.decorator = PhraseDecorator()
+            self.decorator = OutputAnnotationDecorator()
 
     def tag_sentence_layers(
         self: Self,
@@ -204,7 +204,7 @@ class DepTaggerOrchestrator:
             raise RuntimeError("matcher is not initialised.")
         return self.matcher
 
-    def _get_decorator(self: Self) -> PhraseDecorator:
+    def _get_decorator(self: Self) -> OutputAnnotationDecorator:
         """
         Return configured decorator as non-optional instance.
         """
@@ -230,9 +230,11 @@ class DepTaggerOrchestrator:
                 raise TypeError("matcher must expose patterns or be None.")
 
         if self.decorator is not None and not isinstance(
-            self.decorator, PhraseDecorator
+            self.decorator, OutputAnnotationDecorator
         ):
-            raise TypeError("decorator must be a PhraseDecorator or None.")
+            raise TypeError(
+                "decorator must be an OutputAnnotationDecorator or None."
+            )
 
         if self.sentence_match_dedup_mode not in VALID_DEDUP_MODES:
             raise ValueError(

@@ -3,7 +3,7 @@ import pytest
 import estnltk
 from scripts.DepChainTagger.graph import SyntaxGraphIndex
 from scripts.DepChainTagger.patterns import ChainMatch, MatchCollector
-from scripts.DepChainTagger.decorator import PhraseDecorator
+from scripts.DepChainTagger.decorator import OutputAnnotationDecorator
 from scripts.DepChainTagger.types import DirectionMode, EdgeContext
 
 
@@ -51,7 +51,7 @@ def test_decorate_single_match_fields(sample_nodes):
     src, tgt = sample_nodes
     match = make_match(src, tgt, pattern_name="testpat")
 
-    dec = PhraseDecorator()
+    dec = OutputAnnotationDecorator()
     row = dec.decorate_match(match)
 
     # Check: decorated row contains expected pattern metadata and role fields
@@ -72,7 +72,7 @@ def test_decorate_matches_and_collector(sample_nodes):
     m1 = make_match(src, tgt, pattern_name="p1")
     m2 = make_match(src, tgt, pattern_name="p2")
 
-    dec = PhraseDecorator(output_field_prefix="x_")
+    dec = OutputAnnotationDecorator(output_field_prefix="x_")
     rows = dec.decorate_matches([m1, m2])
     # Check: multiple matches decorated and prefixed output field present
     assert len(rows) == 2
@@ -90,7 +90,7 @@ def test_output_text_roles_and_flags(sample_nodes):
     src, tgt = sample_nodes
     match = make_match(src, tgt, pattern_name="p")
 
-    dec = PhraseDecorator(
+    dec = OutputAnnotationDecorator(
         include_pattern_name=False,
         include_role_spans=False,
         output_text_roles=("target",),

@@ -31,12 +31,13 @@ from .conditions import (
 )
 from .patterns import PathPattern, ChainMatch, MatchCollector
 from .matcher import DepChainMatcher
-from .decorator import PhraseDecorator
+from .decorator import OutputAnnotationDecorator
 from .output_utils import (
     build_match_annotation_payload,
     collect_output_attribute_names,
     collect_role_span_names,
 )
+from .dep_chain_tagger import AnnotationDecorator
 from .orchestrator import DepTaggerOrchestrator
 from .dep_chain_tagger import DepChainTagger
 from .child_matcher import DepChildMatcher
@@ -77,7 +78,9 @@ __all__ = [
     "ChainMatch",
     "MatchCollector",
     "DepChainMatcher",
+    "OutputAnnotationDecorator",
     "PhraseDecorator",
+    "AnnotationDecorator",
     "build_match_annotation_payload",
     "collect_output_attribute_names",
     "collect_role_span_names",

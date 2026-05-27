@@ -7,7 +7,7 @@ from scripts.DepChainTagger.conditions import (
     NodeConstraint,
     ValueCondition,
 )
-from scripts.DepChainTagger.decorator import PhraseDecorator
+from scripts.DepChainTagger.decorator import OutputAnnotationDecorator
 from scripts.DepChainTagger.matcher import DepChainMatcher
 from scripts.DepChainTagger.orchestrator import DepTaggerOrchestrator
 from scripts.DepChainTagger.patterns import PathPattern, ChainMatch
@@ -72,7 +72,7 @@ def test_constructor_sets_defaults():
     assert orchestrator.matcher is not None
     assert orchestrator.decorator is not None
     assert isinstance(orchestrator.matcher, DepChainMatcher)
-    assert isinstance(orchestrator.decorator, PhraseDecorator)
+    assert isinstance(orchestrator.decorator, OutputAnnotationDecorator)
 
 
 def test_tag_sentence_layer_and_layers(sample_layers_and_spans):

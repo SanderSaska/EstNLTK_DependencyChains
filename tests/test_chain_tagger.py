@@ -1,10 +1,12 @@
 # DepChainTagger class testing
 from typing import Any, cast
+from types import SimpleNamespace
 
+import estnltk
 import pytest
 
 from scripts.DepChainTagger.matcher import DepChainMatcher
-from scripts.DepChainTagger.dep_chain_tagger import DepChainTagger
+from scripts.DepChainTagger.dep_chain_tagger import AnnotationDecorator, DepChainTagger
 from scripts.DepChainTagger.conditions import (
     EdgeConstraint,
     NodeConstraint,
@@ -74,3 +76,86 @@ def test_constructor_accepts_custom_input_layer_names():
     assert tagger.syntax_layer == "v172_stanza_syntax"
     assert tagger.sentences_layer == "sentences"
     assert tagger.input_layers == ("v172_stanza_syntax", "sentences")
+
+
+def test_annotation_decorator_can_filter_and_update_payload():
+    text = estnltk.Text("Ta andis raamatu.")
+
+    def decorator(text_obj, base_span, annotation):
+        if annotation["pattern_name"] == "drop_me":
+            return None
+        annotation["decorated"] = True
+        annotation["base_roles"] = tuple(sorted(base_span))
+        annotation["text_length"] = len(text_obj.text)
+        return annotation
+
+    annotation_decorator = AnnotationDecorator(decorator)
+
+    kept = annotation_decorator.decorate(
+        text=text,
+        base_span={"parent": object(), "child": object()},
+        annotation={"pattern_name": "keep_me"},
+    )
+    assert kept is not None
+    assert kept["decorated"] is True
+    assert kept["base_roles"] == ("child", "parent")
+    assert kept["text_length"] == len(text.text)
+
+    dropped = annotation_decorator.decorate(
+        text=text,
+        base_span={"parent": object()},
+        annotation={"pattern_name": "drop_me"},
+    )
+    assert dropped is None
+
+
+def test_add_match_to_layer_uses_annotation_decorator():
+    pattern = build_chain_pattern("base_p")
+
+    class DummyNode:
+        def __init__(self, start, end, text):
+            self.start = start
+            self.end = end
+            self.text = text
+
+    class DummyLayer:
+        def __init__(self, text_object):
+            self.text_object = text_object
+            self.rows = []
+
+        def add_annotation(self, payload):
+            self.rows.append(payload)
+
+    tagger = DepChainTagger(
+        patterns=(pattern,),
+        annotation_decorator=AnnotationDecorator(
+            lambda text_obj, base_span, annotation: None
+            if annotation["pattern_name"] == "drop_me"
+            else {**annotation, "updated": True}
+        ),
+    )
+
+    layer = DummyLayer(text_object=estnltk.Text("Ta andis raamatu."))
+    keep_match = SimpleNamespace(
+        pattern_name="base_p",
+        role_to_node={
+            "parent": DummyNode(0, 2, "Ta"),
+            "child": DummyNode(3, 8, "andis"),
+        },
+    )
+    tagger._add_match_to_layer(layer, keep_match)
+
+    assert len(layer.rows) == 1
+    assert layer.rows[0]["updated"] is True
+
+    drop_match = SimpleNamespace(
+        pattern_name="drop_me",
+        role_to_node={
+            "parent": DummyNode(0, 2, "Ta"),
+            "child": DummyNode(3, 8, "andis"),
+        },
+    )
+    tagger._pattern_by_name["drop_me"] = pattern
+    tagger._add_match_to_layer(layer, drop_match)
+
+    assert len(layer.rows) == 1
