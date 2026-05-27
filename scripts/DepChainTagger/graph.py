@@ -1,4 +1,7 @@
 import estnltk
+from ete3 import Tree
+from ete3.treeview.faces import TextFace
+from ete3.treeview.main import NodeStyle, TreeStyle
 from typing import (
     Dict,
     List,
@@ -10,8 +13,6 @@ from typing import (
 )
 
 from .types import DirectionMode
-from .config import SEED
-import matplotlib.pyplot as plt
 import networkx as nx
 
 
@@ -311,119 +312,110 @@ class SyntaxGraphIndex:
 
     def visualize(
         self: Self,
-        ax: Optional[Any] = None,
-        figsize: Tuple[int, int] = (12, 8),
-        layout: str = "dot",
         with_node_labels: bool = False,
         with_edge_labels: bool = True,
-        node_size: int = 2600,
         font_size: int = 8,
         title: Optional[str] = None,
+        highlight_token_ids: Optional[Iterable[int]] = None,
         show: bool = True,
-    ):
+    ) -> Any:
         """
-        Visualise the dependency tree as a readable graph.
+        Visualise the dependency tree as a readable tree diagram.
 
         Args:
-            ax (Optional[Axes], optional): Existing matplotlib axis to draw on.
-            layout (str, optional): Layout strategy. Supported values are
-                "spring" and "dot" (uses Graphviz if available, otherwise
-                falls back to a spring layout).
-            with_labels (bool, optional): Whether to draw node labels.
-            node_size (int, optional): Matplotlib node size.
-            font_size (int, optional): Font size used for node and edge labels.
-            title (Optional[str], optional): Optional plot title.
-            show (bool, optional): Whether to call ``plt.show()``.
+            with_node_labels (bool, optional): Whether to show the node text,
+                part-of-speech tag, and morphological features.
+            with_edge_labels (bool, optional): Whether to show dependency labels
+                on the branches.
+            font_size (int, optional): Font size used for the rendered text.
+            title (Optional[str], optional): Optional tree title.
+            highlight_token_ids (Optional[Iterable[int]], optional): Token IDs to
+                highlight with a different node background colour.
+            show (bool, optional): Whether to display the rendered tree immediately.
 
         Returns:
-            matplotlib.figure.Figure: The created figure.
-
-        Raises:
-            ImportError: If NetworkX or Matplotlib is not installed.
-            ValueError: If an unsupported layout is requested.
+            TreeNode: The rendered ete3 tree root.
         """
 
-        graph = self.to_networkx_graph(
-            with_node_labels=with_node_labels, with_edge_labels=with_edge_labels
-        )
+        tree_node_cls = Tree
+        node_style_cls = NodeStyle
+        text_face_cls = TextFace
+        tree_style_cls = TreeStyle
 
-        if ax is None:
-            fig, ax = plt.subplots(figsize=figsize)
+        highlight_token_ids = set(highlight_token_ids or [])
+
+        def build_subtree(token_id: int) -> Any:
+            """Recursively build an ete3 subtree from one token."""
+
+            node = tree_node_cls(name=str(token_id))
+
+            style = node_style_cls()
+            style["size"] = 0
+            style["hz_line_width"] = 1
+            style["vt_line_width"] = 1
+            style["fgcolor"] = "#4a6fa5"
+            if token_id in highlight_token_ids:
+                style["bgcolor"] = "#ffe08a"
+            node.set_style(style)
+
+            label_text = self._format_node_label(
+                token_id, with_node_labels=with_node_labels
+            )
+            node.add_face(
+                text_face_cls(label_text, fsize=font_size),
+                column=0,
+                position="branch-right",
+            )
+
+            if with_edge_labels:
+                edge_text = self._format_edge_label(token_id, with_edge_labels=True)
+                if edge_text:
+                    node.add_face(
+                        text_face_cls(
+                            edge_text,
+                            fsize=max(font_size - 1, 6),
+                            fgcolor="#666666",
+                        ),
+                        column=0,
+                        position="branch-top",
+                    )
+
+            for child_id in self.children_by_id.get(token_id, []):
+                node.add_child(build_subtree(child_id))
+
+            return node
+
+        roots = self.get_root_nodes()
+        if not roots:
+            raise ValueError("Cannot visualise an empty syntax graph.")
+
+        if len(roots) == 1:
+            ete_root = build_subtree(int(getattr(roots[0], "id")))
         else:
-            fig = ax.figure
+            ete_root = tree_node_cls(name="")
+            dummy_style = node_style_cls()
+            dummy_style["size"] = 0
+            dummy_style["hz_line_width"] = 0
+            dummy_style["vt_line_width"] = 0
+            ete_root.set_style(dummy_style)
+            for root in roots:
+                ete_root.add_child(build_subtree(int(getattr(root, "id"))))
 
-        if layout == "bipartite":
-            positions = nx.bipartite_layout(graph, nodes=graph.nodes())
-        elif layout == "kamada_kawai":
-            positions = nx.kamada_kawai_layout(graph)
-        elif layout == "planar":
-            positions = nx.planar_layout(graph)
-        elif layout == "random":
-            positions = nx.random_layout(graph, seed=SEED)
-        elif layout == "spectral":
-            positions = nx.spectral_layout(graph)
-        elif layout == "spring":
-            positions = nx.spring_layout(graph, seed=SEED)
-        elif layout == "shell":
-            positions = nx.shell_layout(graph)
-        else:
-            try:
-                positions = nx.nx_agraph.graphviz_layout(graph, prog=layout)
-            except Exception:
-                print(
-                    f"Graphviz layout '{layout}' is not available. Falling back to spring layout."
-                )
-                positions = nx.spring_layout(graph, seed=SEED)
+        ts = tree_style_cls()
+        ts.show_leaf_name = False
+        ts.show_scale = False
+        ts.mode = "r"
+        ts.branch_vertical_margin = 12
 
-        node_labels = nx.get_node_attributes(graph, "label")
-        edge_labels = nx.get_edge_attributes(graph, "label")
-
-        nx.draw_networkx_edges(
-            graph,
-            positions,
-            ax=ax,
-            arrows=True,
-            arrowstyle="->",
-            arrowsize=18,
-            width=1.3,
-            edge_color="#666666",
-        )
-        nx.draw_networkx_nodes(
-            graph,
-            positions,
-            ax=ax,
-            node_size=node_size,
-            node_color="#dfeaf5",
-            edgecolors="#4a6fa5",
-            linewidths=1.2,
-        )
-        nx.draw_networkx_labels(
-            graph,
-            positions,
-            labels=node_labels,
-            ax=ax,
-            font_size=font_size,
-            font_family="sans-serif",
-        )
-        nx.draw_networkx_edge_labels(
-            graph,
-            positions,
-            edge_labels=edge_labels,
-            ax=ax,
-            font_size=font_size,
-            label_pos=0.5,
-        )
-
-        ax.set_axis_off()
-        ax.set_title(title or self._build_visualization_title())
-        fig.tight_layout()
+        if title:
+            ts.title.add_face(
+                text_face_cls(title, fsize=font_size + 2, bold=True), column=0
+            )
 
         if show:
-            plt.show()
-        else:
-            plt.close(fig)
+            ete_root.show(tree_style=ts)
 
-        return fig
+        return ete_root
 
     def _build_visualization_title(self: Self) -> str:
         """

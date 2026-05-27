@@ -1,7 +1,9 @@
 # SyntaxGraphIndex class testing
 import pytest
 from types import SimpleNamespace
+from typing import Any, cast
 
+import scripts.DepChainTagger.graph as graph_module
 from scripts.DepChainTagger.graph import SyntaxGraphIndex
 from scripts.DepChainTagger.types import DirectionMode
 
@@ -36,7 +38,7 @@ def test_syntaxgraphindex_basics() -> None:
         make_ann(2, 1, "left_child", deprel="nmod"),
         make_ann(3, 1, "right_child", deprel="obl"),
     ]
-    graph = SyntaxGraphIndex(layer_ok, sentence_id=0, sentence_span=(0, 15))
+    graph = SyntaxGraphIndex(cast(Any, layer_ok), sentence_id=0, sentence_span=(0, 15))
 
     # Check: basic accessors and tree validation
     assert graph.sent_id == 0
@@ -45,9 +47,13 @@ def test_syntaxgraphindex_basics() -> None:
     assert graph.has_node(2)
     # Check: non-existent node lookup
     assert not graph.has_node(99)
-    assert graph.get_node(1).text == "root"
+    root_node = graph.get_node(1)
+    assert root_node is not None
+    assert root_node.text == "root"
     assert graph.get_parent(1) is None
-    assert graph.get_parent(2).id == 1
+    parent_node = graph.get_parent(2)
+    assert parent_node is not None
+    assert parent_node.id == 1
 
     # Check: children, root nodes and tree validation
     assert [node.id for node in graph.get_children(1)] == [2, 3]
@@ -62,20 +68,20 @@ def test_syntaxgraphindex_iter_edges_and_nodes() -> None:
         make_ann(2, 1, "left_child", deprel="nmod"),
         make_ann(3, 1, "right_child", deprel="obl"),
     ]
-    graph = SyntaxGraphIndex(layer_ok)
+    graph = SyntaxGraphIndex(cast(Any, layer_ok))
 
     # Check: iter_nodes yields nodes in token order
     assert [node.id for node in graph.iter_nodes()] == [1, 2, 3]
 
     edges_up = [
-        (node.id, parent.id, direction)
+        (cast(Any, node).id, cast(Any, parent).id, direction)
         for node, parent, direction in graph.iter_edges(DirectionMode.UP)
     ]
     # Check: iter_edges with UP returns tuples (node, parent, UP)
     assert edges_up == [(2, 1, DirectionMode.UP), (3, 1, DirectionMode.UP)]
 
     edges_down = [
-        (node.id, child.id, direction)
+        (cast(Any, node).id, cast(Any, child).id, direction)
         for node, child, direction in graph.iter_edges(DirectionMode.DOWN)
     ]
     # Check: iter_edges with DOWN returns tuples (node, child, DOWN)
@@ -88,7 +94,7 @@ def test_syntaxgraphindex_duplicate_ids_raises() -> None:
         make_ann(1, 1, "duplicate"),
     ]
     with pytest.raises(ValueError):
-        SyntaxGraphIndex(layer_duplicate_ids)
+        SyntaxGraphIndex(cast(Any, layer_duplicate_ids))
 
 
 def test_syntaxgraphindex_missing_head_raises() -> None:
@@ -98,7 +104,7 @@ def test_syntaxgraphindex_missing_head_raises() -> None:
     ]
     with pytest.raises(ValueError):
         # Check: missing head references raise an error
-        SyntaxGraphIndex(layer_missing_head)
+        SyntaxGraphIndex(cast(Any, layer_missing_head))
 
 
 def test_syntaxgraphindex_cycle_raises() -> None:
@@ -108,4 +114,88 @@ def test_syntaxgraphindex_cycle_raises() -> None:
     ]
     with pytest.raises(ValueError):
         # Check: cyclical parent-child links raise an error
-        SyntaxGraphIndex(layer_cycle)
+        SyntaxGraphIndex(cast(Any, layer_cycle))
+
+
+def test_syntaxgraphindex_visualize_builds_ete3_tree(monkeypatch) -> None:
+    """Visualisation should build a readable ete3 tree with labels and title."""
+    layer_ok = [
+        make_ann(1, 0, "root", deprel="root"),
+        make_ann(2, 1, "child", deprel="nmod"),
+    ]
+    graph = SyntaxGraphIndex(cast(Any, layer_ok))
+
+    class FakeFace:
+        def __init__(self, text, **kwargs):
+            self.text = text
+            self.kwargs = kwargs
+
+    class FakeNodeStyle(dict):
+        pass
+
+    class FakeTitle:
+        def __init__(self):
+            self.faces = []
+
+        def add_face(self, face, column=0):
+            self.faces.append((face, column))
+
+    class FakeTreeStyle:
+        def __init__(self):
+            self.show_leaf_name = None
+            self.show_scale = None
+            self.mode = None
+            self.branch_vertical_margin = None
+            self.title = FakeTitle()
+
+    class FakeTreeNode:
+        def __init__(self, name=""):
+            self.name = name
+            self.children = []
+            self.faces = []
+            self.style = None
+            self.shown_with = None
+
+        def set_style(self, style):
+            self.style = style
+
+        def add_face(self, face, column=0, position=None):
+            self.faces.append((face, column, position))
+
+        def add_child(self, child):
+            self.children.append(child)
+            return child
+
+        def show(self, tree_style=None):
+            self.shown_with = tree_style
+
+    monkeypatch.setattr(graph_module, "Tree", FakeTreeNode)
+    monkeypatch.setattr(graph_module, "NodeStyle", FakeNodeStyle)
+    monkeypatch.setattr(graph_module, "TextFace", FakeFace)
+    monkeypatch.setattr(graph_module, "TreeStyle", FakeTreeStyle)
+
+    ete_root = graph.visualize(
+        with_node_labels=True,
+        with_edge_labels=True,
+        title="Demo tree",
+        show=True,
+    )
+
+    ete_root = cast(Any, ete_root)
+
+    assert ete_root.name == "1"
+    assert len(ete_root.children) == 1
+    assert ete_root.children[0].name == "2"
+
+    root_label = ete_root.faces[0][0]
+    assert root_label.text == "root\nNOUN\n_"
+
+    child_label = ete_root.children[0].faces[0][0]
+    assert child_label.text == "child\nNOUN\n_"
+
+    child_edge_label = ete_root.children[0].faces[1][0]
+    assert child_edge_label.text == "nmod"
+
+    assert ete_root.shown_with is not None
+    title_face = ete_root.shown_with.title.faces[0][0]
+    assert title_face.text == "Demo tree"
