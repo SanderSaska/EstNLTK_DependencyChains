@@ -120,7 +120,9 @@ class DepChainTagger(RelationTagger):
         sentences_layer: str = DEFAULT_SENTENCES_LAYER_NAME,
         output_layer: str = DEFAULT_OUTPUT_LAYER_NAME,
         output_attributes: Optional[Tuple[str, ...]] = None,
-        annotation_decorator: Optional[AnnotationDecorator] = None,
+        annotation_decorator: Optional[
+            AnnotationDecorator
+        ] = None,  # TODO: This should be callable as a function, not a class instance, to avoid forcing users to import the class just for the default no-op behavior
         include_pattern_constraints: bool = False,
         max_matches_per_sentence: int = DEFAULT_MAX_MATCHES_PER_SENTENCE,
         allow_role_node_overlap: bool = False,
@@ -138,6 +140,7 @@ class DepChainTagger(RelationTagger):
         self.input_layers = (self.syntax_layer, self.sentences_layer)
         self.output_layer = output_layer
         self.include_pattern_constraints = include_pattern_constraints
+        # TODO: Edge case when someone overwrites span names or output attributes we need to check there are no conflicts (duplicates) with the ones generated from patterns
         self.output_span_names = collect_role_span_names(patterns)
         self.output_attributes = (
             output_attributes
