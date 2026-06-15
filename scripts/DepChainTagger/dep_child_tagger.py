@@ -6,6 +6,7 @@ from typing import (
     Optional,
     Self,
     Tuple,
+    Callable,
     cast,
 )
 
@@ -23,10 +24,9 @@ from .config import (
     DEFAULT_SENTENCES_LAYER_NAME,
     DEFAULT_SYNTAX_LAYER_NAME,
 )
-from .dep_chain_tagger import AnnotationDecorator
 from .orchestrator import DepTaggerOrchestrator
 from .patterns import PathPattern
-from .output_utils import (
+from .tagger_utils import (
     build_match_annotation_payload,
     collect_output_attribute_names,
     collect_role_span_names,
@@ -37,28 +37,27 @@ from .types import DirectionMode
 class DepChildTagger(RelationTagger):
     """EstNLTK RelationTagger wrapper for direct-child matches.
 
-    Args:
-        patterns: Dependency patterns to evaluate for direct-child matches.
-        syntax_layer: Name of the syntax layer used as input.
-        sentences_layer: Name of the sentence layer used to split the text.
-        output_layer: Name of the output relation layer.
-        output_attributes: Optional relation attributes to expose.
-        annotation_decorator: Optional annotation decorator that can update
+    ## Attributes:
+        - **patterns** `(Tuple[PathPattern, ...])`: Dependency-chain patterns to evaluate.
+        - **syntax_layer** `(str)`: Name of the syntax layer used as input.
+        - **sentences_layer** `(str)`: Name of the sentence layer used to split the text.
+        - **output_layer** `(str)`: Name of the output relation layer.
+        - **output_span_names** `(Optional[Tuple[str, ...]])`: Optional tuple of span names to include in the output.
+        - **output_attributes** `(Optional[Tuple[str, ...]])`: Optional relation attributes to expose.
+        - **annotation_decorator** `(Optional[Callable])`: Optional annotation decorator that can update
             or filter relation payloads before insertion.
-        include_pattern_constraints: Whether to flatten pattern constraint
+        - **include_pattern_constraints** `(bool)`: Whether to flatten pattern constraint
             metadata into the output relation rows.
-        max_matches_per_sentence: Maximum number of matches to keep per
+        - **max_matches_per_sentence** `(int)`: Maximum number of matches to keep per
             sentence before global aggregation.
-        allow_role_node_overlap: Whether the matcher may reuse the same node
+        - **allow_role_node_overlap** `(bool)`: Whether the matcher may reuse the same node
             for multiple roles in one pattern.
-        max_total_matches: Global cap on the number of accepted matches.
-        sentence_match_dedup_mode: Deduplication mode applied within a
+        - **max_total_matches** `(int)`: Global cap on the number of accepted matches.
+        - **sentence_match_dedup_mode** `(Literal["none", "exact", "role_based"]`)`: Deduplication mode applied within a
             sentence.
-        global_dedup_mode: Deduplication mode applied across sentences.
+        - **global_dedup_mode** `(Literal["none", "exact", "role_based"]`)`: Deduplication mode applied across sentences.
 
-    This tagger mirrors `DepChainTagger`, but delegates matching to
-    `DepChildMatcher`. The output format stays compatible with the same
-    decorator and relation-layer structure.
+    This tagger takes a set of dependency-chain patterns and applies them to a syntax layer, producing a relation layer with matched spans and optional flattened metadata. The tagger enforces that all edge constraints in the patterns are directed DOWN, as it is designed for child-matching scenarios.
     """
 
     conf_param = [
@@ -75,6 +74,8 @@ class DepChildTagger(RelationTagger):
         "max_total_matches",
         "sentence_match_dedup_mode",
         "global_dedup_mode",
+        "_user_defined_span_names",
+        "_user_defined_attributes",
         "_depchild_tagger",
         "_pattern_by_name",
     ]
@@ -86,7 +87,8 @@ class DepChildTagger(RelationTagger):
         sentences_layer: str = DEFAULT_SENTENCES_LAYER_NAME,
         output_layer: str = DEFAULT_OUTPUT_LAYER_NAME,
         output_attributes: Optional[Tuple[str, ...]] = None,
-        annotation_decorator: Optional[AnnotationDecorator] = None,
+        output_span_names: Optional[Tuple[str, ...]] = None,
+        annotation_decorator: Optional[Callable] = None,
         include_pattern_constraints: bool = False,
         max_matches_per_sentence: int = DEFAULT_MAX_MATCHES_PER_SENTENCE,
         allow_role_node_overlap: bool = False,
@@ -99,17 +101,18 @@ class DepChildTagger(RelationTagger):
         ),
     ) -> None:
 
+        self.patterns = patterns
         self.syntax_layer = syntax_layer
         self.sentences_layer = sentences_layer
         self.input_layers = (self.syntax_layer, self.sentences_layer)
         self.output_layer = output_layer
         self.include_pattern_constraints = include_pattern_constraints
-        self.output_span_names = collect_role_span_names(patterns)
-        self.output_attributes = (
-            output_attributes
-            if output_attributes is not None
-            else collect_output_attribute_names(
-                patterns, self.include_pattern_constraints
+        self.output_span_names, self._user_defined_span_names = collect_role_span_names(
+            patterns, output_span_names
+        )
+        self.output_attributes, self._user_defined_attributes = (
+            collect_output_attribute_names(
+                patterns, self.include_pattern_constraints, output_attributes
             )
         )
 
@@ -127,7 +130,7 @@ class DepChildTagger(RelationTagger):
             global_dedup_mode=global_dedup_mode,
             max_total_matches=max_total_matches,
         )
-        self.annotation_decorator = annotation_decorator or AnnotationDecorator()
+        self.annotation_decorator = annotation_decorator
 
         seen_pattern_names: set[str] = set()
         for pattern in patterns:
@@ -151,8 +154,8 @@ class DepChildTagger(RelationTagger):
     def _make_layer_template(self: Self) -> RelationLayer:
         return RelationLayer(
             name=self.output_layer,
-            span_names=self.output_span_names,
-            attributes=self.output_attributes,
+            span_names=(self.output_span_names),
+            attributes=(self.output_attributes),
             display_order=tuple(self.output_span_names) + tuple(self.output_attributes),
             text_object=None,
             ambiguous=True,
@@ -232,14 +235,16 @@ class DepChildTagger(RelationTagger):
             match=match,
             patterns_by_name=self._pattern_by_name,
             span_names=self.output_span_names,
+            user_defined_span_names=self._user_defined_span_names,
+            user_defined_attributes=self._user_defined_attributes,
             include_pattern_constraints=self.include_pattern_constraints,
         )
-        decorated_payload = self.annotation_decorator.decorate(
-            text=cast(Text, layer.text_object),
-            base_span=dict(match.role_to_node),
-            annotation=annotation_payload,
-        )
-        if decorated_payload is None:
-            return
-
-        layer.add_annotation(decorated_payload)
+        if self.annotation_decorator is not None:
+            annotation_payload = self.annotation_decorator(
+                text=cast(Text, layer.text_object),
+                base_span=dict(match.role_to_node),
+                annotation=annotation_payload,
+            )
+            if annotation_payload is None:
+                return
+        layer.add_annotation(annotation_payload)

@@ -3,7 +3,7 @@ import pytest
 import estnltk
 from scripts.DepChainTagger.graph import SyntaxGraphIndex
 from scripts.DepChainTagger.patterns import ChainMatch, MatchCollector
-from scripts.DepChainTagger.decorator import OutputAnnotationDecorator
+from scripts.DepChainTagger.serializer import ChainMatchSerializer
 from scripts.DepChainTagger.types import DirectionMode, EdgeContext
 
 
@@ -33,7 +33,8 @@ def sample_nodes():
 
 def make_match(source_node, target_node, pattern_name="p") -> ChainMatch:
     edge_ctx = EdgeContext(
-        direction=DirectionMode.UP, deprel="nmod", hops=1
+        direction=DirectionMode.UP,
+        hops=1,
     )
     return ChainMatch(
         pattern_name=pattern_name,
@@ -51,8 +52,8 @@ def test_decorate_single_match_fields(sample_nodes):
     src, tgt = sample_nodes
     match = make_match(src, tgt, pattern_name="testpat")
 
-    dec = OutputAnnotationDecorator()
-    row = dec.decorate_match(match)
+    dec = ChainMatchSerializer()
+    row = dec.serialize_match(match)
 
     # Check: decorated row contains expected pattern metadata and role fields
     assert row["pattern_name"] == "testpat"
@@ -72,8 +73,8 @@ def test_decorate_matches_and_collector(sample_nodes):
     m1 = make_match(src, tgt, pattern_name="p1")
     m2 = make_match(src, tgt, pattern_name="p2")
 
-    dec = OutputAnnotationDecorator(output_field_prefix="x_")
-    rows = dec.decorate_matches([m1, m2])
+    dec = ChainMatchSerializer(output_field_prefix="x_")
+    rows = dec.serialize_matches([m1, m2])
     # Check: multiple matches decorated and prefixed output field present
     assert len(rows) == 2
     assert "x_pattern_name" in rows[0]
@@ -82,7 +83,7 @@ def test_decorate_matches_and_collector(sample_nodes):
     coll = MatchCollector(dedup_mode="none", max_matches=10)
     coll.add(m1)
     coll.add(m2)
-    rows2 = dec.decorate_collector(coll)
+    rows2 = dec.serialize_collector(coll)
     assert len(rows2) == 2
 
 
@@ -90,12 +91,12 @@ def test_output_text_roles_and_flags(sample_nodes):
     src, tgt = sample_nodes
     match = make_match(src, tgt, pattern_name="p")
 
-    dec = OutputAnnotationDecorator(
+    dec = ChainMatchSerializer(
         include_pattern_name=False,
         include_role_spans=False,
         output_text_roles=("target",),
     )
-    row = dec.decorate_match(match)
+    row = dec.serialize_match(match)
     # Check: flags control which fields appear and matched_text can be limited
     assert "pattern_name" not in row
     assert "role_to_span" not in row

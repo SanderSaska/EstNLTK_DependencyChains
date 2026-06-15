@@ -5,7 +5,7 @@ from scripts.DepChainTagger.conditions import (
 )
 from scripts.DepChainTagger.dep_child_tagger import DepChildTagger
 from scripts.DepChainTagger.dep_chain_tagger import DepChainTagger
-from scripts.DepChainTagger.output_utils import (
+from scripts.DepChainTagger.tagger_utils import (
     build_match_annotation_payload,
     collect_output_attribute_names,
     collect_role_span_names,
@@ -21,10 +21,12 @@ def build_pattern() -> PathPattern:
         role="anchor",
         attribute_conditions={"text": ValueCondition(ConditionMode.EXACT, "suvel")},
     )
-    child = NodeConstraint(role="s")
+    child = NodeConstraint(
+        role="s",
+        attribute_conditions={"deprel": ValueCondition(ConditionMode.EXACT, "nmod")},
+    )
     edge = EdgeConstraint(
         direction=DirectionMode.UP,
-        attribute_conditions={"deprel": ValueCondition(ConditionMode.EXACT, "nmod")},
         min_hops=1,
         max_hops=1,
     )
@@ -41,15 +43,11 @@ def test_collect_schema_fields() -> None:
     """The schema should expose role spans first and flattened metadata fields after."""
     pattern = build_pattern()
     # Check: role span names are collected in first-seen order
-    assert collect_role_span_names((pattern,)) == ("anchor", "s")
+    assert collect_role_span_names((pattern,)) == (("anchor", "s"), ())
     # Check: opt-in constraint fields expand the schema with flattened metadata
     assert collect_output_attribute_names(
         (pattern,), include_pattern_constraints=True
-    ) == (
-        "pattern_name",
-        "matched_text",
-        "anchor_text",
-    )
+    ) == (("pattern_name", "matched_text", "anchor_text", "s_deprel"), ())
 
 
 def test_build_match_annotation_payload() -> None:
@@ -71,7 +69,6 @@ def test_build_match_annotation_payload() -> None:
                 "s",
                 EdgeContext(
                     direction=DirectionMode.UP,
-                    deprel="nmod",
                     hops=1,
                 ),
             ),
@@ -92,7 +89,7 @@ def test_build_match_annotation_payload() -> None:
     assert payload["pattern_name"] == "season"
     assert payload["matched_text"] == "suvel aasta"
     assert payload["anchor_text"]["value"] == "suvel"
-    # Edge-derived metadata is intentionally not included in the payload.
+    assert payload["s_deprel"]["value"] == "nmod"
 
 
 def test_tagger_constructors_use_schema_helpers() -> None:
@@ -104,9 +101,6 @@ def test_tagger_constructors_use_schema_helpers() -> None:
         edge_steps=(
             EdgeConstraint(
                 direction=DirectionMode.DOWN,
-                attribute_conditions={
-                    "deprel": ValueCondition(ConditionMode.EXACT, "nmod")
-                },
                 min_hops=1,
                 max_hops=1,
             ),
@@ -118,7 +112,13 @@ def test_tagger_constructors_use_schema_helpers() -> None:
     chain_tagger = DepChainTagger(patterns=(chain_pattern,))
     child_tagger = DepChildTagger(patterns=(child_pattern,))
     # Check: both taggers use the same helpers to collect output schema fields
-    assert chain_tagger.output_span_names == ("anchor", "s")
-    assert child_tagger.output_span_names == ("anchor", "s")
+    assert chain_tagger.output_span_names == (("anchor", "s"))
+    assert (
+        chain_tagger._user_defined_span_names == ()
+    )  # no user-defined spans in this test
+    assert child_tagger.output_span_names == (("anchor", "s"))
+    assert (
+        child_tagger._user_defined_span_names == ()
+    )  # no user-defined spans in this test
     assert chain_tagger.output_attributes[:2] == ("pattern_name", "matched_text")
     assert child_tagger.output_attributes[:2] == ("pattern_name", "matched_text")

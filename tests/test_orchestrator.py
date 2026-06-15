@@ -7,7 +7,7 @@ from scripts.DepChainTagger.conditions import (
     NodeConstraint,
     ValueCondition,
 )
-from scripts.DepChainTagger.decorator import OutputAnnotationDecorator
+from scripts.DepChainTagger.serializer import ChainMatchSerializer
 from scripts.DepChainTagger.matcher import DepChainMatcher
 from scripts.DepChainTagger.orchestrator import DepTaggerOrchestrator
 from scripts.DepChainTagger.patterns import PathPattern, ChainMatch
@@ -43,11 +43,13 @@ def build_wildcard_pattern(name: str) -> PathPattern:
     )
     child_node = NodeConstraint(
         role="child",
-        attribute_conditions={"upostag": ValueCondition(ConditionMode.WILDCARD)},
+        attribute_conditions={
+            "upostag": ValueCondition(ConditionMode.WILDCARD),
+            "deprel": ValueCondition(ConditionMode.WILDCARD),
+        },
     )
     edge_constraint = EdgeConstraint(
         direction=DirectionMode.UP,
-        attribute_conditions={"deprel": ValueCondition(ConditionMode.WILDCARD)},
         min_hops=1,
         max_hops=1,
     )
@@ -70,9 +72,9 @@ def test_constructor_sets_defaults():
     )
     # Check: orchestrator builds a matcher and decorator with sensible defaults
     assert orchestrator.matcher is not None
-    assert orchestrator.decorator is not None
+    assert orchestrator.serializer is not None
     assert isinstance(orchestrator.matcher, DepChainMatcher)
-    assert isinstance(orchestrator.decorator, OutputAnnotationDecorator)
+    assert isinstance(orchestrator.serializer, ChainMatchSerializer)
 
 
 def test_tag_sentence_layer_and_layers(sample_layers_and_spans):
@@ -111,12 +113,12 @@ def test_decorate_and_full_pipeline(sample_layers_and_spans):
     )
     # Check: decorator produces list of dicts for matched results
     if matches:
-        decorated = orchestrator.decorate_matches(matches)
+        decorated = orchestrator.serialize_matches(matches)
         assert isinstance(decorated, list)
         if decorated:
             assert isinstance(decorated[0], dict)
 
-    decorated_all = orchestrator.tag_and_decorate_sentence_layers(
+    decorated_all = orchestrator.tag_and_serialize_sentence_layers(
         sentence_syntax_layers=layers, sentence_spans=spans
     )
     # Check: combined tag-and-decorate pipeline returns a list

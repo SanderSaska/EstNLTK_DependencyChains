@@ -6,7 +6,7 @@ import estnltk
 import pytest
 
 from scripts.DepChainTagger.matcher import DepChainMatcher
-from scripts.DepChainTagger.dep_chain_tagger import AnnotationDecorator, DepChainTagger
+from scripts.DepChainTagger.dep_chain_tagger import DepChainTagger
 from scripts.DepChainTagger.conditions import (
     EdgeConstraint,
     NodeConstraint,
@@ -16,6 +16,16 @@ from scripts.DepChainTagger.patterns import PathPattern
 from scripts.DepChainTagger.types import ConditionMode, DirectionMode
 
 
+def dummy_decorator(text, base_span, annotation):
+    if annotation["pattern_name"] == "drop_me":
+        return None
+    annotation["decorated"] = True
+    annotation["base_roles"] = tuple(sorted(base_span))
+    annotation["text_length"] = len(text.text)
+    annotation["updated"] = True
+    return annotation
+
+
 def build_chain_pattern(name: str) -> PathPattern:
     parent_node = NodeConstraint(
         role="parent",
@@ -23,11 +33,13 @@ def build_chain_pattern(name: str) -> PathPattern:
     )
     child_node = NodeConstraint(
         role="child",
-        attribute_conditions={"upostag": ValueCondition(ConditionMode.WILDCARD)},
+        attribute_conditions={
+            "upostag": ValueCondition(ConditionMode.WILDCARD),
+            "deprel": ValueCondition(ConditionMode.WILDCARD),
+        },
     )
     edge_constraint = EdgeConstraint(
         direction=DirectionMode.UP,
-        attribute_conditions={"deprel": ValueCondition(ConditionMode.WILDCARD)},
         min_hops=1,
         max_hops=1,
     )
@@ -72,7 +84,7 @@ def test_constructor_accepts_custom_input_layer_names():
         syntax_layer="v172_stanza_syntax",
         sentences_layer="sentences",
     )
-
+    # Check: custom input layer names are set correctly
     assert tagger.syntax_layer == "v172_stanza_syntax"
     assert tagger.sentences_layer == "sentences"
     assert tagger.input_layers == ("v172_stanza_syntax", "sentences")
@@ -81,31 +93,25 @@ def test_constructor_accepts_custom_input_layer_names():
 def test_annotation_decorator_can_filter_and_update_payload():
     text = estnltk.Text("Ta andis raamatu.")
 
-    def decorator(text_obj, base_span, annotation):
-        if annotation["pattern_name"] == "drop_me":
-            return None
-        annotation["decorated"] = True
-        annotation["base_roles"] = tuple(sorted(base_span))
-        annotation["text_length"] = len(text_obj.text)
-        return annotation
+    annotation_decorator = dummy_decorator
 
-    annotation_decorator = AnnotationDecorator(decorator)
-
-    kept = annotation_decorator.decorate(
+    kept = annotation_decorator(
         text=text,
         base_span={"parent": object(), "child": object()},
         annotation={"pattern_name": "keep_me"},
     )
+    # Check: the decorator can update the annotation payload
     assert kept is not None
     assert kept["decorated"] is True
     assert kept["base_roles"] == ("child", "parent")
     assert kept["text_length"] == len(text.text)
 
-    dropped = annotation_decorator.decorate(
+    dropped = annotation_decorator(
         text=text,
         base_span={"parent": object()},
         annotation={"pattern_name": "drop_me"},
     )
+    # Check: the decorator can filter out matches by returning None
     assert dropped is None
 
 
@@ -128,11 +134,7 @@ def test_add_match_to_layer_uses_annotation_decorator():
 
     tagger = DepChainTagger(
         patterns=(pattern,),
-        annotation_decorator=AnnotationDecorator(
-            lambda text_obj, base_span, annotation: None
-            if annotation["pattern_name"] == "drop_me"
-            else {**annotation, "updated": True}
-        ),
+        annotation_decorator=dummy_decorator,
     )
 
     layer = DummyLayer(text_object=estnltk.Text("Ta andis raamatu."))
@@ -144,7 +146,7 @@ def test_add_match_to_layer_uses_annotation_decorator():
         },
     )
     tagger._add_match_to_layer(layer, keep_match)
-
+    # Check: the match is added to the layer with the decorator applied
     assert len(layer.rows) == 1
     assert layer.rows[0]["updated"] is True
 
@@ -157,5 +159,5 @@ def test_add_match_to_layer_uses_annotation_decorator():
     )
     tagger._pattern_by_name["drop_me"] = pattern
     tagger._add_match_to_layer(layer, drop_match)
-
+    # Check: the match that should be dropped is not added to the layers
     assert len(layer.rows) == 1

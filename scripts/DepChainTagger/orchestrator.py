@@ -14,7 +14,7 @@ from .graph import SyntaxGraphIndex
 from .patterns import PathPattern
 from .matcher import DepChainMatcher
 from .patterns import MatchCollector, ChainMatch
-from .decorator import OutputAnnotationDecorator
+from .serializer import ChainMatchSerializer
 
 from .config import (
     DEFAULT_MAX_MATCHES_PER_SENTENCE,
@@ -34,12 +34,12 @@ class DepTaggerOrchestrator:
     1. build sentence-level `SyntaxGraphIndex` objects,
     2. run `DepChainMatcher` on each sentence,
     3. optionally deduplicate across all sentence matches,
-    4. transform matches into relational output rows with `OutputAnnotationDecorator`.
+    4. transform matches into relational output rows with `ChainMatchSerializer`.
 
     ## Attributes:
     - **patterns** (`Tuple[PathPattern, ...]`): A tuple of PathPattern objects that define the patterns to match against the syntax graphs.
     - **matcher** (`Optional[DepChainMatcher]`): Optional pre-configured matcher instance. If None, a default matcher will be constructed from `patterns` and related configuration.
-    - **decorator** (`Optional[OutputAnnotationDecorator]`): Optional pre-configured decorator instance. If None, a default decorator with standard settings will be constructed.
+    - **serializer** (`Optional[ChainMatchSerializer]`): Optional pre-configured serializer instance. If None, a default serializer with standard settings will be constructed.
     - **sentence_match_dedup_mode** (`str`): Deduplication mode to apply within each sentence's matches. Allowed values are "none", "exact", and "role_based". This controls how matches that are similar within the same sentence are filtered before being returned.
     - **max_matches_per_sentence** (`int`): Maximum number of matches to accept for each individual sentence. This can help prevent combinatorial explosion in very complex sentences.
     - **allow_role_node_overlap** (`bool`): Whether to allow matches where the same node in the syntax graph is assigned to multiple roles in the pattern. This setting is passed down to the matcher and can help control match quality.
@@ -49,7 +49,7 @@ class DepTaggerOrchestrator:
 
     patterns: Tuple[PathPattern, ...]
     matcher: Optional[Any] = None
-    decorator: Optional[OutputAnnotationDecorator] = None
+    serializer: Optional[ChainMatchSerializer] = None
     sentence_match_dedup_mode: str = DEFAULT_DEDUP_MODE_SENTENCE
     max_matches_per_sentence: int = DEFAULT_MAX_MATCHES_PER_SENTENCE
     allow_role_node_overlap: bool = False
@@ -70,8 +70,8 @@ class DepTaggerOrchestrator:
                 allow_role_node_overlap=self.allow_role_node_overlap,
             )
 
-        if self.decorator is None:
-            self.decorator = OutputAnnotationDecorator()
+        if self.serializer is None:
+            self.serializer = ChainMatchSerializer()
 
     def tag_sentence_layers(
         self: Self,
@@ -157,28 +157,28 @@ class DepTaggerOrchestrator:
             sentence_span=sentence_span,
         )
 
-    def decorate_matches(
+    def serialize_matches(
         self: Self, matches: Iterable[ChainMatch]
     ) -> List[Dict[str, Any]]:
         """
-        Decorate existing matches into relational output rows.
+        Serialize existing matches into relational output rows.
 
         Args:
-            matches (Iterable[ChainMatch]): Match objects to decorate.
+            matches (Iterable[ChainMatch]): Match objects to serialize.
 
         Returns:
-            List[Dict[str, Any]]: Decorated rows ready for output layers/files.
+            List[Dict[str, Any]]: Serialized rows ready for output layers/files.
         """
-        decorator = self._get_decorator()
-        return decorator.decorate_matches(matches)
+        serializer = self._get_serializer()
+        return serializer.serialize_matches(matches)
 
-    def tag_and_decorate_sentence_layers(
+    def tag_and_serialize_sentence_layers(
         self: Self,
         sentence_syntax_layers: Iterable[estnltk.Layer],
         sentence_spans: Optional[Iterable[Tuple[int, int]]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Run full pipeline and return decorated relational rows.
+        Run full pipeline and return serialized relational rows.
 
         Args:
             sentence_syntax_layers (Iterable[estnltk.Layer]): Iterable of
@@ -187,14 +187,14 @@ class DepTaggerOrchestrator:
                 Optional aligned sentence spans.
 
         Returns:
-            List[Dict[str, Any]]: Decorated output rows.
+            List[Dict[str, Any]]: Serialized output rows.
         """
         matches = self.tag_sentence_layers(
             sentence_syntax_layers=sentence_syntax_layers,
             sentence_spans=sentence_spans,
         )
-        decorator = self._get_decorator()
-        return decorator.decorate_matches(matches)
+        serializer = self._get_serializer()
+        return serializer.serialize_matches(matches)
 
     def _get_matcher(self: Self) -> Any:
         """
@@ -204,13 +204,13 @@ class DepTaggerOrchestrator:
             raise RuntimeError("matcher is not initialised.")
         return self.matcher
 
-    def _get_decorator(self: Self) -> OutputAnnotationDecorator:
+    def _get_serializer(self: Self) -> ChainMatchSerializer:
         """
-        Return configured decorator as non-optional instance.
+        Return configured serializer as non-optional instance.
         """
-        if self.decorator is None:
-            raise RuntimeError("decorator is not initialised.")
-        return self.decorator
+        if self.serializer is None:
+            raise RuntimeError("serializer is not initialised.")
+        return self.serializer
 
     def _validate_or_raise(self: Self) -> None:
         """
@@ -229,12 +229,10 @@ class DepTaggerOrchestrator:
             if not hasattr(self.matcher, "patterns"):
                 raise TypeError("matcher must expose patterns or be None.")
 
-        if self.decorator is not None and not isinstance(
-            self.decorator, OutputAnnotationDecorator
+        if self.serializer is not None and not isinstance(
+            self.serializer, ChainMatchSerializer
         ):
-            raise TypeError(
-                "decorator must be an OutputAnnotationDecorator or None."
-            )
+            raise TypeError("serializer must be a ChainMatchSerializer or None.")
 
         if self.sentence_match_dedup_mode not in VALID_DEDUP_MODES:
             raise ValueError(

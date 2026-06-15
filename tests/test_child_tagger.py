@@ -6,7 +6,6 @@ import estnltk
 import pytest
 
 from scripts.DepChainTagger.child_matcher import DepChildMatcher
-from scripts.DepChainTagger.dep_chain_tagger import AnnotationDecorator
 from scripts.DepChainTagger.dep_child_tagger import DepChildTagger
 from scripts.DepChainTagger.conditions import (
     EdgeConstraint,
@@ -17,6 +16,16 @@ from scripts.DepChainTagger.patterns import PathPattern
 from scripts.DepChainTagger.types import ConditionMode, DirectionMode
 
 
+def dummy_decorator(text, base_span, annotation):
+    if annotation["pattern_name"] == "drop_me":
+        return None
+    annotation["decorated"] = True
+    annotation["base_roles"] = tuple(sorted(base_span))
+    annotation["text_length"] = len(text.text)
+    annotation["updated"] = True
+    return annotation
+
+
 def build_child_pattern(name: str) -> PathPattern:
     parent_node = NodeConstraint(
         role="parent",
@@ -24,11 +33,13 @@ def build_child_pattern(name: str) -> PathPattern:
     )
     child_node = NodeConstraint(
         role="child",
-        attribute_conditions={"upostag": ValueCondition(ConditionMode.WILDCARD)},
+        attribute_conditions={
+            "upostag": ValueCondition(ConditionMode.WILDCARD),
+            "deprel": ValueCondition(ConditionMode.WILDCARD),
+        },
     )
     edge_constraint = EdgeConstraint(
         direction=DirectionMode.DOWN,
-        attribute_conditions={"deprel": ValueCondition(ConditionMode.WILDCARD)},
         min_hops=1,
         max_hops=1,
     )
@@ -90,9 +101,9 @@ def test_annotation_decorator_can_filter_and_update_payload():
         annotation["text_length"] = len(text_obj.text)
         return annotation
 
-    annotation_decorator = AnnotationDecorator(decorator)
+    annotation_decorator = dummy_decorator
 
-    kept = annotation_decorator.decorate(
+    kept = annotation_decorator(
         text=text,
         base_span={"parent": object(), "child": object()},
         annotation={"pattern_name": "keep_me"},
@@ -102,7 +113,7 @@ def test_annotation_decorator_can_filter_and_update_payload():
     assert kept["base_roles"] == ("child", "parent")
     assert kept["text_length"] == len(text.text)
 
-    dropped = annotation_decorator.decorate(
+    dropped = annotation_decorator(
         text=text,
         base_span={"parent": object()},
         annotation={"pattern_name": "drop_me"},
@@ -129,11 +140,7 @@ def test_add_match_to_layer_uses_annotation_decorator():
 
     tagger = DepChildTagger(
         patterns=(pattern,),
-        annotation_decorator=AnnotationDecorator(
-            lambda text_obj, base_span, annotation: None
-            if annotation["pattern_name"] == "drop_me"
-            else {**annotation, "updated": True}
-        ),
+        annotation_decorator=dummy_decorator,
     )
 
     layer = DummyLayer(text_object=estnltk.Text("Ta andis raamatu."))

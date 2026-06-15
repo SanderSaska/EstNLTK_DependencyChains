@@ -11,9 +11,93 @@ from dataclasses import dataclass
 
 from .patterns import ChainMatch, MatchCollector
 
+from .conditions import (
+    NestedValueCondition,
+    NodeConstraint,
+    ValueCondition,
+)
+from .types import ConditionMode
+
+
+def append_unique(values: List[str], seen: set[str], item: str) -> None:
+    """Append a string once while preserving first-seen order."""
+    if item in seen:
+        return
+    seen.add(item)
+    values.append(item)
+
+
+def _serialize_value_condition(condition: ValueCondition) -> Any:
+    """Serialize a scalar value condition into a tabular-friendly value."""
+    if condition.mode is ConditionMode.WILDCARD:
+        return "WILDCARD"
+    return {
+        "mode": condition.mode.value,
+        "value": condition.value,
+        "allow_missing": condition.allow_missing,
+        "missing_markers": condition.missing_markers,
+        "normalizer": getattr(condition.normalizer, "__name__", None),
+    }
+
+
+def _serialize_nested_value_condition(
+    condition: NestedValueCondition,
+) -> Any:
+    """Serialize a nested value condition into a JSON-friendly dictionary."""
+    if condition.mode is ConditionMode.WILDCARD:
+        return "WILDCARD"
+    return {
+        "mode": condition.mode.value,
+        "required": condition.required,
+        "forbidden": condition.forbidden,
+        "allow_extra_keys": condition.allow_extra_keys,
+        "allow_missing": condition.allow_missing,
+        "missing_markers": condition.missing_markers,
+        "normalizer": getattr(condition.normalizer, "__name__", None),
+    }
+
+
+def serialize_constraints(node_constraint: NodeConstraint) -> Dict[str, Any]:
+    """Serialize node constraints into a flat dictionary with role-based prefixes."""
+    payload: Dict[str, Any] = {}
+    prefix = f"{node_constraint.role}_"
+    if node_constraint:
+        payload.update(_serialize_node_constraint(node_constraint, prefix))
+    return payload
+
+
+def _serialize_node_constraint(
+    node_constraint: NodeConstraint, prefix: str
+) -> Dict[str, Any]:
+    """Flatten node-constraint metadata with a role prefix."""
+    if not node_constraint:
+        return {}
+    payload: Dict[str, Any] = {}
+    # Include attribute conditions with role-based prefix
+    if node_constraint.attribute_conditions:
+        for attr_name, condition in node_constraint.attribute_conditions.items():
+            value = _serialize_value_condition(condition)
+            if value is not None:
+                payload[f"{prefix}{attr_name}"] = value
+
+    # Include any nested-structure attribute conditions (e.g. `feats`)
+    if node_constraint.nested_attribute_conditions:
+        for attr_name, condition in node_constraint.nested_attribute_conditions.items():
+            value = _serialize_nested_value_condition(condition)
+            if value is not None:
+                payload[f"{prefix}{attr_name}"] = value
+    # Include extra predicates as a list of their names with role-based prefix
+    if node_constraint.extra_predicates:
+        payload[f"{prefix}extra_predicates"] = tuple(
+            getattr(predicate, "__name__", repr(predicate))
+            for predicate in node_constraint.extra_predicates
+        )
+
+    return payload
+
 
 @dataclass(slots=True)
-class OutputAnnotationDecorator:
+class ChainMatchSerializer:
     """
     Transform `ChainMatch` objects into output rows for downstream layers.
 
@@ -49,15 +133,15 @@ class OutputAnnotationDecorator:
         """
         self._validate_or_raise()
 
-    def decorate_match(self: Self, match: ChainMatch) -> Dict[str, Any]:
+    def serialize_match(self: Self, match: ChainMatch) -> Dict[str, Any]:
         """
         Convert one `ChainMatch` into one output dictionary.
 
         Args:
-            match (ChainMatch): Match object to decorate.
+            match (ChainMatch): Match object to serialize.
 
         Returns:
-            Dict[str, Any]: Decorated output row.
+            Dict[str, Any]: Serialized output row.
         """
         row: Dict[str, Any] = {}
 
@@ -93,34 +177,34 @@ class OutputAnnotationDecorator:
 
         return row
 
-    def decorate_matches(
+    def serialize_matches(
         self: Self,
         matches: Iterable[ChainMatch],
     ) -> List[Dict[str, Any]]:
         """
-        Decorate many matches preserving insertion order.
+        Serialize many matches preserving insertion order.
 
         Args:
-            matches (Iterable[ChainMatch]): Matches to decorate.
+            matches (Iterable[ChainMatch]): Matches to serialize.
 
         Returns:
-            List[Dict[str, Any]]: List of decorated rows.
+            List[Dict[str, Any]]: List of serialized rows.
         """
-        return [self.decorate_match(match) for match in matches]
+        return [self.serialize_match(match) for match in matches]
 
-    def decorate_collector(
+    def serialize_collector(
         self: Self, collector: MatchCollector
     ) -> List[Dict[str, Any]]:
         """
-        Decorate all matches currently stored in a `MatchCollector`.
+        Serialize all matches currently stored in a `MatchCollector`.
 
         Args:
             collector (MatchCollector): Source collector.
 
         Returns:
-            List[Dict[str, Any]]: Decorated rows from collector contents.
+            List[Dict[str, Any]]: Serialized rows from collector contents.
         """
-        return self.decorate_matches(collector.all())
+        return self.serialize_matches(collector.all())
 
     def _field_name(self: Self, base_name: str) -> str:
         """
@@ -165,7 +249,6 @@ class OutputAnnotationDecorator:
                     "from_role": from_role,
                     "to_role": to_role,
                     "direction": edge_context.direction.value,
-                    "deprel": edge_context.deprel,
                     "hops": edge_context.hops,
                 }
             )
