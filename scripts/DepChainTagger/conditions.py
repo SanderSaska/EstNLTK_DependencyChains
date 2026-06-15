@@ -20,7 +20,6 @@ from .config import (
     SELECTIVITY_WEIGHT_REGEX,
     SELECTIVITY_WEIGHT_EXTRA_PREDICATE,
     RESERVED_NODE_ATTRIBUTE_NAMES,
-    RESERVED_EDGE_ATTRIBUTE_NAMES,
 )
 
 
@@ -396,7 +395,6 @@ class NestedValueCondition:
         """
         Validate config and pre-normalise expected values once.
         """
-        
 
         self._validate_or_raise()
 
@@ -790,29 +788,20 @@ class EdgeConstraint:
     """
     A constraint for filtering edges in the syntax graph based on their properties.
 
-    Scalar attribute conditions on the ``EdgeContext`` are specified via
-    ``attribute_conditions``: a dictionary that maps attribute names to
-    ``ValueCondition`` objects. At match time each key is used as a
-    ``getattr()`` lookup on the edge context, and the retrieved value is tested
-    against the corresponding condition. This replaces the former dedicated
-    ``deprel_condition`` field; use ``attribute_conditions={"deprel": ...}``
-    instead. Structural fields (``direction``, ``hops``) remain as dedicated
-    dataclass fields because they use range/enum logic rather than simple
-    value matching.
+    Linguistic attributes such as ``deprel`` are stored on the child/dependent node in
+    UD dependency syntax, so they should be constrained via ``NodeConstraint.attribute_conditions``
+    on the corresponding node step rather than on the edge.
 
     ## Attributes:
     - **direction** (`DirectionMode`): The direction of the edge to consider (up, down, or both).
-    - **attribute_conditions** (`Optional[Dict[str, ValueCondition]]`): An optional dictionary mapping attribute names on the EdgeContext to `ValueCondition` objects. These are intended only for scalar edge attributes (e.g. `deprel`). Do not use `attribute_conditions` for dict-valued edge attributes; prefer a dedicated structure if your edge model includes dict-valued fields. Each key is an attribute name that will be looked up on the edge context via ``getattr(edge_context, key, None)``, and the retrieved value is matched against the corresponding condition.
     - **min_hops** (`Optional[int]`): The minimum number of hops (edges) to traverse in the specified direction for this constraint to apply. Defaults to 1.
     - **max_hops** (`Optional[int]`): The maximum number of hops (edges) to traverse in the specified direction for this constraint to apply. Defaults to 1.
     ## Methods:
     - :func:`~EdgeConstraint.matches`: Checks whether a given edge context satisfies this constraint.
-    - :func:`~EdgeConstraint.describe`: Returns a human-readable explanation of this edge constraint, including the direction, attribute conditions, hop range, and other settings.
+    - :func:`~EdgeConstraint.describe`: Returns a human-readable explanation of this edge constraint, including the direction and hop range.
     """
 
     direction: DirectionMode
-    attribute_conditions: Optional[Dict[str, ValueCondition]] = None
-    nested_attribute_conditions: Optional[Dict[str, NestedValueCondition]] = None
     min_hops: Optional[int] = 1
     max_hops: Optional[int] = 1
 
@@ -826,28 +815,12 @@ class EdgeConstraint:
         """
         Check whether the given edge context satisfies this constraint.
 
-        Each key in ``attribute_conditions`` is resolved via
-        ``getattr(edge_context, key, None)`` and the resulting value is
-        tested against the corresponding ``ValueCondition``.
-
         Args:
-            edge_context (EdgeContext): The context of the edge to check against this constraint, including its direction, deprel, and hop count.
+            edge_context (EdgeContext): The context of the edge to check against this constraint, including its direction and the number of hops from the source node.
 
         Returns:
             bool: True if the edge context satisfies this constraint, False otherwise.
         """
-        # Check attribute conditions (e.g. deprel, or any future edge attribute)
-        if self.attribute_conditions:
-            for attr_name, condition in self.attribute_conditions.items():
-                actual_value = getattr(edge_context, attr_name, None)
-                if not condition.matches(actual_value):
-                    return False
-        # Check nested-structure attribute conditions (if present)
-        if self.nested_attribute_conditions:
-            for attr_name, condition in self.nested_attribute_conditions.items():
-                actual_value = getattr(edge_context, attr_name, None)
-                if not condition.matches(actual_value):
-                    return False
         # Check direction
         # If BOTH, we allow any direction, so no check needed. Otherwise, the edge's direction must match the specified direction.
         if (
@@ -864,15 +837,12 @@ class EdgeConstraint:
 
     def describe(self: Self) -> str:
         """
-        Return a human-readable explanation of this edge constraint, including the direction, attribute conditions, hop range, and other settings.
+        Return a human-readable explanation of this edge constraint, including the direction and hop range.
 
         Returns:
-            str: A human-readable string describing this edge constraint, including the direction, attribute conditions, hop range, and other settings. This can be used for debugging or for explaining why a particular edge did or did not match this constraint.
+            str: A human-readable string describing this edge constraint, including the direction and hop range. This can be used for debugging or for explaining why a particular edge did or did not match this constraint.
         """
         parts = [f"Direction: {self.direction.value}"]
-        if self.attribute_conditions:
-            for attr_name, condition in self.attribute_conditions.items():
-                parts.append(f"Attribute '{attr_name}': {condition.describe()}")
         if self.min_hops is not None or self.max_hops is not None:
             parts.append(f"Hops: {self.min_hops or 0} to {self.max_hops or '∞'}")
         return "; ".join(parts)
@@ -883,61 +853,6 @@ class EdgeConstraint:
         """
         if not isinstance(self.direction, DirectionMode):
             raise TypeError("direction must be an instance of DirectionMode.")
-
-        if self.attribute_conditions is not None:
-            if not isinstance(self.attribute_conditions, dict):
-                raise TypeError(
-                    "attribute_conditions must be a Dict[str, ValueCondition] or None."
-                )
-            for key, cond in self.attribute_conditions.items():
-                if not isinstance(key, str) or key.strip() == "":
-                    raise TypeError(
-                        "Each key in attribute_conditions must be a non-empty string."
-                    )
-                if not isinstance(cond, ValueCondition):
-                    raise TypeError(
-                        f"Each value in attribute_conditions must be a ValueCondition, "
-                        f"got {type(cond).__name__} for key '{key}'."
-                    )
-                # Disallow dict-valued expected values in attribute_conditions to
-                # avoid confusing use for dict-like attributes.
-                if getattr(cond, "value", None) is not None and isinstance(
-                    cond.value, dict
-                ):
-                    raise ValueError(
-                        f"attribute_conditions entry '{key}' has a dict-valued expected "
-                        "value; attribute_conditions are for scalar edge attributes."
-                    )
-            # Reject attribute names that are handled by dedicated structural
-            # fields (direction, hops) which use range/enum logic rather than
-            # simple value matching.
-            overlapping = set(self.attribute_conditions.keys()) & set(
-                RESERVED_EDGE_ATTRIBUTE_NAMES.keys()
-            )
-            if overlapping:
-                details = {
-                    attr: RESERVED_EDGE_ATTRIBUTE_NAMES[attr] for attr in overlapping
-                }
-                raise ValueError(
-                    f"attribute_conditions keys {overlapping} are reserved. "
-                    f"These attributes are handled by dedicated structural fields: "
-                    f"{details}. Use the dedicated fields instead."
-                )
-
-        if self.nested_attribute_conditions is not None:
-            if not isinstance(self.nested_attribute_conditions, dict):
-                raise TypeError(
-                    "nested_attribute_conditions must be a Dict[str, NestedValueCondition] or None."
-                )
-            for key, cond in self.nested_attribute_conditions.items():
-                if not isinstance(key, str) or key.strip() == "":
-                    raise TypeError(
-                        "Each key in nested_attribute_conditions must be a non-empty string."
-                    )
-                if not isinstance(cond, NestedValueCondition):
-                    raise TypeError(
-                        f"Each value in nested_attribute_conditions must be NestedValueCondition, got {type(cond).__name__} for key '{key}'."
-                    )
 
         if self.min_hops is not None:
             if not isinstance(self.min_hops, int) or self.min_hops < 0:

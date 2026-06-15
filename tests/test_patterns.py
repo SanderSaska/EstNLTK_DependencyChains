@@ -46,11 +46,10 @@ def nodes(sample_graph):
     }
 
 
-def make_edge_context(
-    direction: DirectionMode, deprel: str | None, hops: int
-) -> EdgeContext:
+def make_edge_context(direction: DirectionMode, hops: int) -> EdgeContext:
     return EdgeContext(
-        direction=direction, deprel=deprel, hops=hops
+        direction=direction,
+        hops=hops,
     )
 
 
@@ -69,7 +68,6 @@ def simple_pattern():
     )
     e = EdgeConstraint(
         direction=DirectionMode.UP,
-        attribute_conditions={"deprel": ValueCondition(ConditionMode.EXACT, "amod")},
         min_hops=1,
         max_hops=1,
     )
@@ -96,7 +94,7 @@ def test_pathpattern_basic_api(simple_pattern):
 def test_pathpattern_default_emit_roles():
     src = NodeConstraint(role="source")
     tgt = NodeConstraint(role="target")
-    e = EdgeConstraint(direction=DirectionMode.UP, attribute_conditions={})
+    e = EdgeConstraint(direction=DirectionMode.UP)
 
     pattern = PathPattern(
         name="default_emit_roles",
@@ -112,7 +110,7 @@ def test_pathpattern_default_emit_roles():
 def test_pathpattern_validation_errors():
     src = NodeConstraint(role="source")
     tgt = NodeConstraint(role="target")
-    e = EdgeConstraint(direction=DirectionMode.UP, attribute_conditions={})
+    e = EdgeConstraint(direction=DirectionMode.UP)
     # Check: invalid path/edge lengths and duplicate roles raise
     with pytest.raises(ValueError):
         PathPattern(
@@ -136,7 +134,7 @@ def test_pathpattern_validation_errors():
 def test_chainmatch_and_to_output(nodes):
     node_3 = nodes[3]
     node_4 = nodes[4]
-    edge_ctx = make_edge_context(DirectionMode.UP, "nmod", 1)
+    edge_ctx = make_edge_context(DirectionMode.UP, 1)
 
     match = ChainMatch(
         pattern_name="p",
@@ -168,7 +166,7 @@ def make_chain_match_for_collector(
     text: str,
     metadata: dict | None = None,
 ) -> ChainMatch:
-    edge_ctx = make_edge_context(DirectionMode.UP, "nmod", 1)
+    edge_ctx = make_edge_context(DirectionMode.UP, 1)
     return ChainMatch(
         pattern_name=pattern_name,
         sentence_index=0,

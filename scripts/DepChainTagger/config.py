@@ -147,7 +147,8 @@ different convention for the "self" / pivot role.
 # 8.  attribute_conditions — reserved attribute names
 # ──────────────────────────────────────────────────────────────
 RESERVED_NODE_ATTRIBUTE_NAMES: dict = {
-    "feats": "feats_condition (uses FeatureCondition, not ValueCondition)",
+    "role": "role (structural field, not a simple attribute condition)",
+    "is_anchor": "is_anchor (structural field, boolean indicating if the node is the anchor)",
 }
 """Attribute names that must NOT appear in ``NodeConstraint.attribute_conditions``.
 
@@ -161,20 +162,4 @@ clear message pointing to the dedicated field they should use instead.
 
 Extend this mapping when new dedicated condition fields are added to
 ``NodeConstraint`` that use a condition type other than ``ValueCondition``.
-"""
-
-RESERVED_EDGE_ATTRIBUTE_NAMES: dict = {
-    "direction": "direction (structural field, uses DirectionMode enum)",
-    "hops": "min_hops / max_hops (structural fields, use range logic)",
-}
-"""Attribute names that must NOT appear in ``EdgeConstraint.attribute_conditions``.
-
-These names are reserved because they are handled by dedicated structural
-fields on ``EdgeConstraint`` that use range or enum logic rather than simple
-value matching.  ``attribute_conditions`` is intended for scalar attributes
-looked up via ``getattr(edge_context, key, None)`` and matched with
-``ValueCondition``.
-
-Extend this mapping when new dedicated structural fields are added to
-``EdgeConstraint``.
 """

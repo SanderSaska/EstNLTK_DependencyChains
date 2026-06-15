@@ -44,11 +44,13 @@ def build_simple_pattern(name: str) -> PathPattern:
     )
     child_node = NodeConstraint(
         role="child",
-        attribute_conditions={"upostag": ValueCondition(ConditionMode.WILDCARD)},
+        attribute_conditions={
+            "upostag": ValueCondition(ConditionMode.WILDCARD),
+            "deprel": ValueCondition(ConditionMode.WILDCARD),
+        },
     )
     edge_constraint = EdgeConstraint(
         direction=DirectionMode.UP,
-        attribute_conditions={"deprel": ValueCondition(ConditionMode.WILDCARD)},
         min_hops=1,
         max_hops=1,
     )
@@ -114,20 +116,21 @@ def test_allow_role_node_overlap(sample_graph):
             NodeConstraint(
                 role="a",
                 attribute_conditions={
-                    "upostag": ValueCondition(ConditionMode.WILDCARD)
+                    "upostag": ValueCondition(ConditionMode.WILDCARD),
+                    "deprel": ValueCondition(ConditionMode.WILDCARD),
                 },
             ),
             NodeConstraint(
                 role="b",
                 attribute_conditions={
-                    "upostag": ValueCondition(ConditionMode.WILDCARD)
+                    "upostag": ValueCondition(ConditionMode.WILDCARD),
+                    "deprel": ValueCondition(ConditionMode.WILDCARD),
                 },
             ),
         ),
         edge_steps=(
             EdgeConstraint(
                 direction=DirectionMode.UP,
-                attribute_conditions={"deprel": ValueCondition(ConditionMode.WILDCARD)},
                 min_hops=0,
                 max_hops=0,
             ),

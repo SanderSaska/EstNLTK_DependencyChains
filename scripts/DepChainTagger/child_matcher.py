@@ -47,7 +47,10 @@ class DepChildMatcher:
         if self.dedup_mode not in VALID_DEDUP_MODES:
             raise ValueError(f"dedup_mode must be one of {VALID_DEDUP_MODES}.")
 
-        if not isinstance(self.max_matches_per_sentence, int) or self.max_matches_per_sentence <= 0:
+        if (
+            not isinstance(self.max_matches_per_sentence, int)
+            or self.max_matches_per_sentence <= 0
+        ):
             raise ValueError("max_matches_per_sentence must be a positive integer.")
 
         if not isinstance(self.allow_role_node_overlap, bool):
@@ -115,7 +118,9 @@ class DepChildMatcher:
                     self._build_chain_match(
                         pattern=pattern,
                         sentence_index=sentence_index,
-                        sentence_span=sentence_span or graph_index.sentence_span or (0, 0),
+                        sentence_span=sentence_span
+                        or graph_index.sentence_span
+                        or (0, 0),
                         assigned_nodes_by_index=assigned_nodes,
                         assigned_edge_by_index=assigned_edges,
                     )
@@ -139,7 +144,10 @@ class DepChildMatcher:
         options = []
         for known_index in assigned_nodes_by_index:
             target_index = known_index + 1
-            if target_index < len(pattern.node_steps) and target_index not in assigned_nodes_by_index:
+            if (
+                target_index < len(pattern.node_steps)
+                and target_index not in assigned_nodes_by_index
+            ):
                 options.append((target_index, known_index, known_index))
 
         if not options:
@@ -159,7 +167,9 @@ class DepChildMatcher:
         )
 
         completed: List[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]] = []
-        used_token_ids = {self._get_node_id(node) for node in assigned_nodes_by_index.values()}
+        used_token_ids = {
+            self._get_node_id(node) for node in assigned_nodes_by_index.values()
+        }
 
         for candidate_node, edge_context in candidate_pairs:
             if not node_constraint.matches(candidate_node):
@@ -205,7 +215,7 @@ class DepChildMatcher:
         # edge_constraint allows BOTH, try DOWN.
         for direction in (DirectionMode.DOWN,):
             for hops in range(min_hops, max_hops + 1):
-                for node, deprel in self._nodes_at_exact_hops(
+                for node in self._nodes_at_exact_hops(
                     graph_index=graph_index,
                     start_node=source_node,
                     direction=direction,
@@ -213,7 +223,6 @@ class DepChildMatcher:
                 ):
                     edge_context = EdgeContext(
                         direction=DirectionMode.DOWN,
-                        deprel=deprel,
                         hops=hops,
                     )
                     if edge_constraint.matches(edge_context):
@@ -227,29 +236,33 @@ class DepChildMatcher:
         start_node: estnltk.Span,
         direction: DirectionMode,
         hops: int,
-    ) -> List[Tuple[estnltk.Span, Optional[str]]]:
+    ) -> List[estnltk.Span]:
         if hops == 0:
-            return [(start_node, None)]
+            return [start_node]
 
         if direction == DirectionMode.DOWN:
-            results: List[Tuple[estnltk.Span, Optional[str]]] = []
+            results: List[estnltk.Span] = []
 
-            def _dfs_down(node: estnltk.Span, remaining_hops: int, last_deprel: Optional[str]):
+            def _dfs_down(
+                node: estnltk.Span,
+                remaining_hops: int,
+            ):
                 if remaining_hops == 0:
-                    results.append((node, last_deprel))
+                    results.append(node)
                     return
                 for child_node in graph_index.get_children(self._get_node_id(node)):
                     _dfs_down(
                         node=child_node,
                         remaining_hops=remaining_hops - 1,
-                        last_deprel=getattr(child_node, "deprel", None),
                     )
 
-            _dfs_down(start_node, hops, None)
+            _dfs_down(start_node, hops)
             return results
 
         # UP and BOTH are not supported in this simplified matcher
-        raise ValueError("DepChildMatcher only supports DOWN traversals in this scaffold.")
+        raise ValueError(
+            "DepChildMatcher only supports DOWN traversals in this scaffold."
+        )
 
     def _resolve_hop_bounds(
         self: Self,

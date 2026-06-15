@@ -152,8 +152,12 @@ class PathPattern:
         if len(valid_roles) != len(roles):
             raise ValueError("Roles defined in node_steps must be unique.")
 
-        if self.emit_roles is None or not isinstance(self.emit_roles, tuple) or not all(
-            isinstance(role, str) and role.strip() != "" for role in self.emit_roles
+        if (
+            self.emit_roles is None
+            or not isinstance(self.emit_roles, tuple)
+            or not all(
+                isinstance(role, str) and role.strip() != "" for role in self.emit_roles
+            )
         ):
             raise TypeError("emit_roles must be a tuple of non-empty strings or None.")
 
@@ -284,7 +288,6 @@ class ChainMatch:
                     "to_role": to_role,
                     "edge_context": {
                         "direction": edge_context.direction.value,
-                        "deprel": edge_context.deprel,
                         "hops": edge_context.hops,
                     },
                 }
@@ -314,7 +317,7 @@ class ChainMatch:
         parts.append("Traversed edges:")
         for from_role, to_role, edge_context in self.traversed_edges:
             parts.append(
-                f"  From role: {from_role} to role: {to_role}, Edge context: {{direction: {edge_context.direction.value}, deprel: {edge_context.deprel}, hops: {edge_context.hops}}}"
+                f"  From role: {from_role} to role: {to_role}, Edge context: {{direction: {edge_context.direction.value}, hops: {edge_context.hops}}}"
             )
         parts.append(f"Matched text: '{self.matched_text}'")
         if self.metadata:
@@ -400,8 +403,12 @@ class MatchCollector:
     dedup_mode: str = DEFAULT_DEDUP_MODE_COLLECTOR
     max_matches: int = DEFAULT_MAX_MATCHES_PER_COLLECTOR
     # Internal O(1) dedup indexes (kept out of repr/init)
-    _exact_keys: Set[Tuple[Any, ...]] = field(default_factory=set, init=False, repr=False)
-    _role_keys: Set[Tuple[Any, ...]] = field(default_factory=set, init=False, repr=False)
+    _exact_keys: Set[Tuple[Any, ...]] = field(
+        default_factory=set, init=False, repr=False
+    )
+    _role_keys: Set[Tuple[Any, ...]] = field(
+        default_factory=set, init=False, repr=False
+    )
 
     def __post_init__(self: Self) -> None:
         """
@@ -426,7 +433,12 @@ class MatchCollector:
     def _make_exact_key(self: Self, match: ChainMatch) -> Tuple[Any, ...]:
         """Stable exact-match key for O(1) exact deduplication."""
         role_items = tuple(sorted(match.role_to_token_id.items()))
-        return (match.pattern_name, match.sentence_index, role_items, match.matched_text)
+        return (
+            match.pattern_name,
+            match.sentence_index,
+            role_items,
+            match.matched_text,
+        )
 
     def is_duplicate(self: Self, match: ChainMatch) -> bool:
         """

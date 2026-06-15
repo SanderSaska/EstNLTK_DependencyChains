@@ -5,6 +5,7 @@ from typing import (
     Optional,
     Tuple,
     Self,
+    Any,
 )
 from dataclasses import dataclass
 
@@ -276,7 +277,7 @@ class DepChainMatcher:
 
         for direction in self._directions_to_try(edge_constraint.direction):
             for hops in range(min_hops, max_hops + 1):
-                for node, deprel in self._nodes_at_exact_hops(
+                for node in self._nodes_at_exact_hops(
                     graph_index=graph_index,
                     start_node=source_node,
                     direction=direction,
@@ -284,7 +285,6 @@ class DepChainMatcher:
                 ):
                     edge_context = self._build_edge_context(
                         direction=direction,
-                        deprel=deprel,
                         hops=hops,
                     )
                     if edge_constraint.matches(edge_context):
@@ -319,7 +319,6 @@ class DepChainMatcher:
             min_hops=edge_constraint.min_hops,
             max_hops=edge_constraint.max_hops,
         )
-
         for direction in self._directions_to_try(edge_constraint.direction):
             for hops in range(min_hops, max_hops + 1):
                 # ── Fast path: single-hop direct lookups ──────────────
@@ -328,10 +327,8 @@ class DepChainMatcher:
                     for source_node in graph_index.get_children(
                         self._get_node_id(target_node)
                     ):
-                        deprel = getattr(source_node, "deprel", None)
                         edge_context = self._build_edge_context(
                             direction=DirectionMode.UP,
-                            deprel=deprel,
                             hops=1,
                         )
                         if edge_constraint.matches(edge_context):
@@ -342,10 +339,8 @@ class DepChainMatcher:
                     # source --DOWN(1)--> target  ⇒  source is the parent of target
                     source_node = graph_index.get_parent(self._get_node_id(target_node))
                     if source_node is not None:
-                        deprel = getattr(target_node, "deprel", None)
                         edge_context = self._build_edge_context(
                             direction=DirectionMode.DOWN,
-                            deprel=deprel,
                             hops=1,
                         )
                         if edge_constraint.matches(edge_context):
@@ -367,8 +362,7 @@ class DepChainMatcher:
                     direction=reverse_direction,
                     hops=hops,
                 )
-
-                for source_node, _unused_deprel in source_pairs:
+                for source_node in source_pairs:
                     # Verify forward and get the correct edge context
                     for (
                         candidate_node,
@@ -391,48 +385,44 @@ class DepChainMatcher:
         start_node: estnltk.Span,
         direction: DirectionMode,
         hops: int,
-    ) -> List[Tuple[estnltk.Span, Optional[str]]]:
+    ) -> List[estnltk.Span]:
         """
         Return all nodes reachable from `start_node` at exactly `hops`.
 
         Returns:
-            List[Tuple[estnltk.Span, Optional[str]]]: Tuples of
-            `(reachable_node, last_edge_deprel)`.
+            List[estnltk.Span]: List of reachable nodes.
+            `(reachable_node)`.
         """
         if hops == 0:
-            return [(start_node, None)]
+            return [start_node]
 
         if direction == DirectionMode.UP:
             current_node = start_node
-            last_deprel: Optional[str] = None
             for _ in range(hops):
                 parent_node = graph_index.get_parent(self._get_node_id(current_node))
                 if parent_node is None:
                     return []
-                last_deprel = getattr(current_node, "deprel", None)
                 current_node = parent_node
-            return [(current_node, last_deprel)]
+            return [current_node]
 
         if direction == DirectionMode.DOWN:
-            results: List[Tuple[estnltk.Span, Optional[str]]] = []
+            results: List[estnltk.Span] = []
 
             def _dfs_down(
                 node: estnltk.Span,
                 remaining_hops: int,
-                last_deprel: Optional[str],
             ) -> None:
                 if remaining_hops == 0:
-                    results.append((node, last_deprel))
+                    results.append(node)
                     return
 
                 for child_node in graph_index.get_children(self._get_node_id(node)):
                     _dfs_down(
                         node=child_node,
                         remaining_hops=remaining_hops - 1,
-                        last_deprel=getattr(child_node, "deprel", None),
                     )
 
-            _dfs_down(start_node, hops, None)
+            _dfs_down(start_node, hops)
             return results
 
         raise ValueError(f"Unsupported direction: {direction}")
@@ -469,7 +459,6 @@ class DepChainMatcher:
     def _build_edge_context(
         self: Self,
         direction: DirectionMode,
-        deprel: Optional[str],
         hops: int,
     ) -> EdgeContext:
         """
@@ -477,7 +466,6 @@ class DepChainMatcher:
         """
         edge_context = EdgeContext(
             direction=direction,
-            deprel=deprel,
             hops=hops,
         )
         return edge_context
