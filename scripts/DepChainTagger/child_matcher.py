@@ -1,6 +1,7 @@
 import estnltk
 from typing import (
     Dict,
+    Iterator,
     List,
     Optional,
     Tuple,
@@ -39,22 +40,10 @@ class DepChildMatcher:
     allow_role_node_overlap: bool = False
 
     def __post_init__(self: Self) -> None:
-        if not isinstance(self.patterns, tuple) or not all(
-            isinstance(p, PathPattern) for p in self.patterns
-        ):
-            raise TypeError("patterns must be a tuple of PathPattern objects.")
-
-        if self.dedup_mode not in VALID_DEDUP_MODES:
-            raise ValueError(f"dedup_mode must be one of {VALID_DEDUP_MODES}.")
-
-        if (
-            not isinstance(self.max_matches_per_sentence, int)
-            or self.max_matches_per_sentence <= 0
-        ):
-            raise ValueError("max_matches_per_sentence must be a positive integer.")
-
-        if not isinstance(self.allow_role_node_overlap, bool):
-            raise TypeError("allow_role_node_overlap must be a boolean value.")
+        """
+        Validate matcher configuration after initialisation.
+        """
+        self._validate_or_raise()
 
     def match_sentence(
         self: Self,
@@ -106,14 +95,12 @@ class DepChildMatcher:
             initial_nodes: Dict[int, estnltk.Span] = {anchor_index: anchor_node}
             initial_edges: Dict[int, EdgeContext] = {}
 
-            assignments = self._expand_assignments(
+            for assigned_nodes, assigned_edges in self._expand_assignments(
                 pattern=pattern,
                 graph_index=graph_index,
                 assigned_nodes_by_index=initial_nodes,
                 assigned_edge_by_index=initial_edges,
-            )
-
-            for assigned_nodes, assigned_edges in assignments:
+            ):
                 matches.append(
                     self._build_chain_match(
                         pattern=pattern,
@@ -125,6 +112,9 @@ class DepChildMatcher:
                         assigned_edge_by_index=assigned_edges,
                     )
                 )
+                # Stop early if we've reached the maximum matches per sentence.
+                if len(matches) >= self.max_matches_per_sentence:
+                    return matches
 
         return matches
 
@@ -134,10 +124,25 @@ class DepChildMatcher:
         graph_index: SyntaxGraphIndex,
         assigned_nodes_by_index: Dict[int, estnltk.Span],
         assigned_edge_by_index: Dict[int, EdgeContext],
-    ) -> List[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]]:
+    ) -> Iterator[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]]:
+        """
+        Recursively expand a partial assignment until all pattern steps are set.
+
+        Args:
+            pattern (PathPattern): Pattern being matched.
+            graph_index (SyntaxGraphIndex): Sentence-level dependency graph.
+            assigned_nodes_by_index (Dict[int, estnltk.Span]): Current partial
+                node assignment keyed by `node_steps` index.
+            assigned_edge_by_index (Dict[int, EdgeContext]): Current partial
+                edge assignment keyed by `edge_steps` index.
+        Yields:
+            Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]: A complete
+                assignment of nodes and edges that satisfies the pattern.
+        """
         # Completion condition
         if len(assigned_nodes_by_index) == len(pattern.node_steps):
-            return [(dict(assigned_nodes_by_index), dict(assigned_edge_by_index))]
+            yield (dict(assigned_nodes_by_index), dict(assigned_edge_by_index))
+            return
 
         # Only expand to the right (higher index) because this matcher is
         # anchored at index 0 and only considers descendants.
@@ -151,7 +156,7 @@ class DepChildMatcher:
                 options.append((target_index, known_index, known_index))
 
         if not options:
-            return []
+            return
 
         # deterministic: pick smallest target index first
         options.sort(key=lambda item: item[0])
@@ -166,7 +171,6 @@ class DepChildMatcher:
             edge_constraint=pattern.edge_steps[edge_index],
         )
 
-        completed: List[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]] = []
         used_token_ids = {
             self._get_node_id(node) for node in assigned_nodes_by_index.values()
         }
@@ -187,16 +191,12 @@ class DepChildMatcher:
             next_edges = dict(assigned_edge_by_index)
             next_edges[edge_index] = edge_context
 
-            completed.extend(
-                self._expand_assignments(
-                    pattern=pattern,
-                    graph_index=graph_index,
-                    assigned_nodes_by_index=next_nodes,
-                    assigned_edge_by_index=next_edges,
-                )
+            yield from self._expand_assignments(
+                pattern=pattern,
+                graph_index=graph_index,
+                assigned_nodes_by_index=next_nodes,
+                assigned_edge_by_index=next_edges,
             )
-
-        return completed
 
     def _enumerate_from_node(
         self: Self,
@@ -211,8 +211,7 @@ class DepChildMatcher:
             max_hops=edge_constraint.max_hops,
         )
 
-        # Only DOWN direction makes sense for this matcher. If the
-        # edge_constraint allows BOTH, try DOWN.
+        # If the edge_constraint allows BOTH, try DOWN.
         for direction in (DirectionMode.DOWN,):
             for hops in range(min_hops, max_hops + 1):
                 for node in self._nodes_at_exact_hops(
@@ -325,3 +324,21 @@ class DepChildMatcher:
         raise ValueError(
             f"anchor_role '{pattern.anchor_role}' not found in pattern node_steps."
         )
+
+    def _validate_or_raise(self: Self) -> None:
+        if not isinstance(self.patterns, tuple) or not all(
+            isinstance(p, PathPattern) for p in self.patterns
+        ):
+            raise TypeError("patterns must be a tuple of PathPattern objects.")
+
+        if self.dedup_mode not in VALID_DEDUP_MODES:
+            raise ValueError(f"dedup_mode must be one of {VALID_DEDUP_MODES}.")
+
+        if (
+            not isinstance(self.max_matches_per_sentence, int)
+            or self.max_matches_per_sentence <= 0
+        ):
+            raise ValueError("max_matches_per_sentence must be a positive integer.")
+
+        if not isinstance(self.allow_role_node_overlap, bool):
+            raise TypeError("allow_role_node_overlap must be a boolean value.")

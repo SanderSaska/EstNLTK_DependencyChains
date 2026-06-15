@@ -1,6 +1,7 @@
 import estnltk
 from typing import (
     Dict,
+    Iterator,
     List,
     Optional,
     Tuple,
@@ -120,14 +121,12 @@ class DepChainMatcher:
 
             initial_nodes: Dict[int, estnltk.Span] = {anchor_index: anchor_node}
             initial_edges: Dict[int, EdgeContext] = {}
-            assignments = self._expand_assignments(
+            for assigned_nodes, assigned_edges in self._expand_assignments(
                 pattern=pattern,
                 graph_index=graph_index,
                 assigned_nodes_by_index=initial_nodes,
                 assigned_edge_by_index=initial_edges,
-            )
-
-            for assigned_nodes, assigned_edges in assignments:
+            ):
                 matches.append(
                     self._build_chain_match(
                         pattern=pattern,
@@ -137,6 +136,9 @@ class DepChainMatcher:
                         assigned_edge_by_index=assigned_edges,
                     )
                 )
+                # Stop early if we've reached the maximum matches per sentence.
+                if len(matches) >= self.max_matches_per_sentence:
+                    return matches
 
         return matches
 
@@ -146,7 +148,7 @@ class DepChainMatcher:
         graph_index: SyntaxGraphIndex,
         assigned_nodes_by_index: Dict[int, estnltk.Span],
         assigned_edge_by_index: Dict[int, EdgeContext],
-    ) -> List[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]]:
+    ) -> Iterator[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]]:
         """
         Recursively expand a partial assignment until all pattern steps are set.
 
@@ -157,19 +159,20 @@ class DepChainMatcher:
                 node assignment keyed by `node_steps` index.
             assigned_edge_by_index (Dict[int, EdgeContext]): Current partial
                 edge assignment keyed by `edge_steps` index.
-        Returns:
-            List[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]]:
-            Completed assignments.
+        Yields:
+            Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]: A complete
+                assignment of nodes and edges that satisfies the pattern.
         """
         if len(assigned_nodes_by_index) == len(pattern.node_steps):
-            return [(dict(assigned_nodes_by_index), dict(assigned_edge_by_index))]
+            yield (dict(assigned_nodes_by_index), dict(assigned_edge_by_index))
+            return
 
         options = self._get_frontier_options(
             pattern=pattern,
             assigned_nodes_by_index=assigned_nodes_by_index,
         )
         if not options:
-            return []
+            return
 
         # Picking the smallest index first keeps search deterministic.
         options.sort(key=lambda item: item[0])
@@ -191,7 +194,6 @@ class DepChainMatcher:
                 edge_constraint=pattern.edge_steps[edge_index],
             )
 
-        completed: List[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]] = []
         used_token_ids = {
             self._get_node_id(node) for node in assigned_nodes_by_index.values()
         }
@@ -213,16 +215,12 @@ class DepChainMatcher:
             next_edges = dict(assigned_edge_by_index)
             next_edges[edge_index] = edge_context
 
-            completed.extend(
-                self._expand_assignments(
-                    pattern=pattern,
-                    graph_index=graph_index,
-                    assigned_nodes_by_index=next_nodes,
-                    assigned_edge_by_index=next_edges,
-                )
+            yield from self._expand_assignments(
+                pattern=pattern,
+                graph_index=graph_index,
+                assigned_nodes_by_index=next_nodes,
+                assigned_edge_by_index=next_edges,
             )
-
-        return completed
 
     def _get_frontier_options(
         self: Self,
@@ -363,19 +361,13 @@ class DepChainMatcher:
                     hops=hops,
                 )
                 for source_node in source_pairs:
-                    # Verify forward and get the correct edge context
-                    for (
-                        candidate_node,
-                        edge_context,
-                    ) in self._enumerate_from_node(
-                        graph_index=graph_index,
-                        source_node=source_node,
-                        edge_constraint=edge_constraint,
-                    ):
-                        if self._get_node_id(candidate_node) == self._get_node_id(
-                            target_node
-                        ):
-                            candidates.append((source_node, edge_context))
+                    # In a tree, the backward path guarantees the forward path.
+                    edge_context = self._build_edge_context(
+                        direction=direction,
+                        hops=hops,
+                    )
+                    if edge_constraint.matches(edge_context):
+                        candidates.append((source_node, edge_context))
 
         return candidates
 
