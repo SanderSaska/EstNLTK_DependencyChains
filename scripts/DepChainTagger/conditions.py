@@ -855,11 +855,11 @@ class EdgeConstraint:
             raise TypeError("direction must be an instance of DirectionMode.")
 
         if self.min_hops is not None:
-            if not isinstance(self.min_hops, int) or self.min_hops < 0:
-                raise ValueError("min_hops must be a non-negative integer or None.")
+            if not isinstance(self.min_hops, int) or self.min_hops <= 0:
+                raise ValueError("min_hops must be a positive integer or None.")
         if self.max_hops is not None:
-            if not isinstance(self.max_hops, int) or self.max_hops < 0:
-                raise ValueError("max_hops must be a non-negative integer or None.")
+            if not isinstance(self.max_hops, int) or self.max_hops <= 0:
+                raise ValueError("max_hops must be a positive integer or None.")
 
         if (
             self.min_hops is not None
