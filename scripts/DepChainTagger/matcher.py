@@ -6,7 +6,6 @@ from typing import (
     Optional,
     Tuple,
     Self,
-    Any,
 )
 from dataclasses import dataclass
 
