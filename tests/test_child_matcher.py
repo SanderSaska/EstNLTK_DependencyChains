@@ -119,8 +119,8 @@ def test_allow_role_node_overlap(sample_graph):
         edge_steps=(
             EdgeConstraint(
                 direction=DirectionMode.DOWN,
-                min_hops=0,
-                max_hops=0,
+                min_hops=1,
+                max_hops=1,
             ),
         ),
         anchor_role="a",
