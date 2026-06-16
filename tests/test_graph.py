@@ -31,13 +31,36 @@ def make_ann(
     )
 
 
+class FakeLayer(list):
+    """Mock estnltk Layer that holds annotations and lists its attributes."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.attributes = [
+            "id",
+            "head",
+            "text",
+            "upostag",
+            "xpostag",
+            "deprel",
+            "lemma",
+            "feats",
+        ]
+
+
+def make_layer(annotations):
+    return FakeLayer(annotations)
+
+
 def test_syntaxgraphindex_basics() -> None:
     """Basic behaviour: construction, node accessors and token order."""
-    layer_ok = [
-        make_ann(1, 0, "root", deprel="root"),
-        make_ann(2, 1, "left_child", deprel="nmod"),
-        make_ann(3, 1, "right_child", deprel="obl"),
-    ]
+    layer_ok = make_layer(
+        [
+            make_ann(1, 0, "root", deprel="root"),
+            make_ann(2, 1, "left_child", deprel="nmod"),
+            make_ann(3, 1, "right_child", deprel="obl"),
+        ]
+    )
     graph = SyntaxGraphIndex(cast(Any, layer_ok), sentence_id=0, sentence_span=(0, 15))
 
     # Check: basic accessors and tree validation
@@ -63,11 +86,13 @@ def test_syntaxgraphindex_basics() -> None:
 
 def test_syntaxgraphindex_iter_edges_and_nodes() -> None:
     """Iteration helpers: iter_nodes and iter_edges return expected sequences."""
-    layer_ok = [
-        make_ann(1, 0, "root", deprel="root"),
-        make_ann(2, 1, "left_child", deprel="nmod"),
-        make_ann(3, 1, "right_child", deprel="obl"),
-    ]
+    layer_ok = make_layer(
+        [
+            make_ann(1, 0, "root", deprel="root"),
+            make_ann(2, 1, "left_child", deprel="nmod"),
+            make_ann(3, 1, "right_child", deprel="obl"),
+        ]
+    )
     graph = SyntaxGraphIndex(cast(Any, layer_ok))
 
     # Check: iter_nodes yields nodes in token order
@@ -89,29 +114,35 @@ def test_syntaxgraphindex_iter_edges_and_nodes() -> None:
 
 
 def test_syntaxgraphindex_duplicate_ids_raises() -> None:
-    layer_duplicate_ids = [
-        make_ann(1, 0, "root"),
-        make_ann(1, 1, "duplicate"),
-    ]
+    layer_duplicate_ids = make_layer(
+        [
+            make_ann(1, 0, "root"),
+            make_ann(1, 1, "duplicate"),
+        ]
+    )
     with pytest.raises(ValueError):
         SyntaxGraphIndex(cast(Any, layer_duplicate_ids))
 
 
 def test_syntaxgraphindex_missing_head_raises() -> None:
-    layer_missing_head = [
-        make_ann(1, 0, "root"),
-        make_ann(2, 99, "orphan"),
-    ]
+    layer_missing_head = make_layer(
+        [
+            make_ann(1, 0, "root"),
+            make_ann(2, 99, "orphan"),
+        ]
+    )
     with pytest.raises(ValueError):
         # Check: missing head references raise an error
         SyntaxGraphIndex(cast(Any, layer_missing_head))
 
 
 def test_syntaxgraphindex_cycle_raises() -> None:
-    layer_cycle = [
-        make_ann(1, 2, "a"),
-        make_ann(2, 1, "b"),
-    ]
+    layer_cycle = make_layer(
+        [
+            make_ann(1, 2, "a"),
+            make_ann(2, 1, "b"),
+        ]
+    )
     with pytest.raises(ValueError):
         # Check: cyclical parent-child links raise an error
         SyntaxGraphIndex(cast(Any, layer_cycle))
@@ -119,10 +150,15 @@ def test_syntaxgraphindex_cycle_raises() -> None:
 
 def test_syntaxgraphindex_visualize_builds_ete3_tree(monkeypatch) -> None:
     """Visualisation should build a readable ete3 tree with labels and title."""
-    layer_ok = [
-        make_ann(1, 0, "root", deprel="root"),
-        make_ann(2, 1, "child", deprel="nmod"),
-    ]
+    # Skip test if ete3 is not installed
+    pytest.importorskip("ete3")
+
+    layer_ok = make_layer(
+        [
+            make_ann(1, 0, "root", deprel="root"),
+            make_ann(2, 1, "child", deprel="nmod"),
+        ]
+    )
     graph = SyntaxGraphIndex(cast(Any, layer_ok))
 
     class FakeFace:
@@ -166,6 +202,9 @@ def test_syntaxgraphindex_visualize_builds_ete3_tree(monkeypatch) -> None:
             self.children.append(child)
             return child
 
+        def add_feature(self, attr, value):
+            setattr(self, attr, value)
+
         def show(self, tree_style=None):
             self.shown_with = tree_style
 
@@ -175,8 +214,6 @@ def test_syntaxgraphindex_visualize_builds_ete3_tree(monkeypatch) -> None:
     monkeypatch.setattr(graph_module, "TreeStyle", FakeTreeStyle)
 
     ete_root = graph.visualize(
-        with_node_labels=True,
-        with_edge_labels=True,
         title="Demo tree",
         show=True,
     )
@@ -187,14 +224,22 @@ def test_syntaxgraphindex_visualize_builds_ete3_tree(monkeypatch) -> None:
     assert len(ete_root.children) == 1
     assert ete_root.children[0].name == "2"
 
+    # The default node label should now just be the token text
     root_label = ete_root.faces[0][0]
-    assert root_label.text == "root\nNOUN\n_"
+    assert root_label.text == "root"
 
     child_label = ete_root.children[0].faces[0][0]
-    assert child_label.text == "child\nNOUN\n_"
+    assert child_label.text == "child"
 
+    # The default edge label should now just be the dependency relation
     child_edge_label = ete_root.children[0].faces[1][0]
     assert child_edge_label.text == "nmod"
+
+    # Verify that other attributes are attached as features for the inspector
+    assert hasattr(ete_root, "upostag")
+    assert ete_root.upostag == "NOUN"
+    assert hasattr(ete_root.children[0], "deprel")
+    assert ete_root.children[0].deprel == "nmod"
 
     assert ete_root.shown_with is not None
     title_face = ete_root.shown_with.title.faces[0][0]

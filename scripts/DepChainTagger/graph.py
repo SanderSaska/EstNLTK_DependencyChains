@@ -1,7 +1,4 @@
 import estnltk
-from ete3 import Tree
-from ete3.treeview.faces import TextFace
-from ete3.treeview.main import NodeStyle, TreeStyle
 from typing import (
     Dict,
     List,
@@ -13,7 +10,13 @@ from typing import (
 )
 
 from .types import DirectionMode
-import networkx as nx
+
+# Optional dependencies: initialized to None so they don't break import
+# They are loaded dynamically inside the methods that require them
+Tree = None
+NodeStyle = None
+TextFace = None
+TreeStyle = None
 
 
 class SyntaxGraphIndex:
@@ -232,40 +235,85 @@ class SyntaxGraphIndex:
         """
         return token_id in self.nodes_by_id
 
+    def _get_all_span_attributes(
+        self: Self,
+        span: estnltk.Span,
+        attributes_to_show_in_inspector: Optional[List[str]] = None,
+        ignore_attributes: List[str] = ["children", "parent_span"],
+    ) -> Dict[str, Any]:
+        """
+        Extracts all available attributes from an estnltk Span to be used as features
+        for graph nodes/edges.
+
+        Args:
+            self (Self): The instance of the SyntaxGraphIndex being queried.
+            span (estnltk.Span): The estnltk Span annotation from which to extract attributes.
+            attributes_to_show_in_inspector (Optional[List[str]], optional): Attributes to display in the node inspector.
+            ignore_attributes (List[str], optional): Attributes to ignore when extracting features for graph nodes/edges. Defaults to ["children", "parent_span"].
+
+        Returns:
+            Dict[str, Any]: A dictionary containing all available attributes of the span, including basic properties (text, id, start, end) and standard layer attributes (lemma, upostag, xpostag, feats, etc.). Attributes with None values are excluded from the dictionary.
+        """
+        attrs = {}
+
+        # Include attributes to show in the inspector
+        if attributes_to_show_in_inspector is not None:
+            for attr in attributes_to_show_in_inspector:
+                val = getattr(span, attr, None)
+                if val is not None:
+                    attrs[attr] = val
+            return attrs
+
+        # Include standard layer attributes (lemma, upostag, xpostag, feats, etc.)
+        for attr in self.stanza_syntax.attributes:
+            if attr in ignore_attributes:
+                continue
+            val = getattr(span, attr, None)
+            if val is not None:
+                attrs[attr] = val
+        return attrs
+
     def _format_node_label(
-        self: Self, token_id: int, with_node_labels: bool = False
+        self: Self, token_id: int, with_node_labels: List[str]
     ) -> str:
         """
         Build a human-readable node label for graph visualisation.
 
-        The label includes the surface form, the universal part-of-speech tag,
-        and the morphological features.
+        By default, the label includes only the token text, keeping the
+        visualisation clean. Other attributes can be included via
+        `with_node_labels`, but are best viewed in the node inspector.
         """
         node = self.nodes_by_id[token_id]
-        word = getattr(node, "text", "") or ""
-        upostag = getattr(node, "upostag", None)
-        feats = getattr(node, "feats", None)
-        feats_text = "_" if not feats else str(feats)
-        if with_node_labels:
-            return f"{word}\n{upostag or '_'}\n{feats_text}"
-        return f"{word}"
+        label_parts = []
+        for attr in with_node_labels:
+            value = getattr(node, attr, None)
+            if value is not None:
+                label_parts.append(str(value))
+        return "\n".join(label_parts)
 
     def _format_edge_label(
-        self: Self, child_id: int, with_edge_labels: bool = True
+        self: Self, child_id: int, with_edge_labels: List[str]
     ) -> str:
         """
         Build the dependency-label text for an edge.
 
-        The dependency relation is stored on the child node in Stanza syntax.
+        By default, the label includes only the dependency relation.
+        Other attributes can be included via `with_edge_labels`, but are
+        best viewed in the edge/node inspector.
         """
         child_node = self.nodes_by_id[child_id]
-        if with_edge_labels:
-            return str(getattr(child_node, "deprel", "") or "")
-        return ""
+        label_parts = []
+        for attr in with_edge_labels:
+            value = getattr(child_node, attr, None)
+            if value is not None:
+                label_parts.append(str(value))
+        return "\n".join(label_parts)
 
     def to_networkx_graph(
-        self: Self, with_node_labels: bool = False, with_edge_labels: bool = True
-    ) -> nx.DiGraph:
+        self: Self,
+        with_node_labels: List[str] = ["text"],
+        with_edge_labels: List[str] = ["deprel"],
+    ) -> Any:
         """
         Convert the indexed tree into a NetworkX directed graph.
 
@@ -280,40 +328,46 @@ class SyntaxGraphIndex:
         except ImportError as exc:
             raise ImportError(
                 "SyntaxGraphIndex.to_networkx_graph() requires the 'networkx' package."
+                "Please install it using `pip install networkx`."
             ) from exc
 
         graph = nx.DiGraph()
 
         for token_id in self.token_order:
             node = self.nodes_by_id[token_id]
+            node_attrs = self._get_all_span_attributes(node)
+
             graph.add_node(
                 token_id,
                 label=self._format_node_label(
                     token_id, with_node_labels=with_node_labels
                 ),
-                text=getattr(node, "text", None),
-                upostag=getattr(node, "upostag", None),
-                feats=getattr(node, "feats", None),
+                **node_attrs,
             )
 
         for child_id in self.token_order:
             parent_id = self.parent_by_id.get(child_id)
             if parent_id is None or parent_id == 0:
                 continue
+            child_node = self.nodes_by_id[child_id]
+            edge_attrs = self._get_all_span_attributes(child_node)
+
             graph.add_edge(
                 parent_id,
                 child_id,
                 label=self._format_edge_label(
                     child_id, with_edge_labels=with_edge_labels
                 ),
+                **edge_attrs,
             )
 
         return graph
 
     def visualize(
         self: Self,
-        with_node_labels: bool = False,
-        with_edge_labels: bool = True,
+        with_node_labels: List[str] = ["text"],
+        with_edge_labels: List[str] = ["deprel"],
+        attributes_to_show_in_inspector: Optional[List[str]] = None,
         font_size: int = 8,
         title: Optional[str] = None,
         highlight_token_ids: Optional[Iterable[int]] = None,
@@ -323,10 +377,9 @@ class SyntaxGraphIndex:
         Visualise the dependency tree as a readable tree diagram.
 
         Args:
-            with_node_labels (bool, optional): Whether to show the node text,
-                part-of-speech tag, and morphological features.
-            with_edge_labels (bool, optional): Whether to show dependency labels
-                on the branches.
+            with_node_labels (List[str], optional): Which attributes to show on nodes.
+            with_edge_labels (List[str], optional): Which attributes to show on edges.
+            attributes_to_show_in_inspector (Optional[List[str]], optional): Attributes to display in the node inspector.
             font_size (int, optional): Font size used for the rendered text.
             title (Optional[str], optional): Optional tree title.
             highlight_token_ids (Optional[Iterable[int]], optional): Token IDs to
@@ -336,6 +389,25 @@ class SyntaxGraphIndex:
         Returns:
             TreeNode: The rendered ete3 tree root.
         """
+        global Tree, NodeStyle, TextFace, TreeStyle
+
+        if Tree is None:
+            try:
+                from ete3 import Tree as _Tree
+                from ete3.treeview.faces import TextFace as _TextFace
+                from ete3.treeview.main import NodeStyle as _NodeStyle
+                from ete3.treeview.main import TreeStyle as _TreeStyle
+            except ImportError as exc:
+                raise ImportError(
+                    "The 'ete3' package is required for visualization. "
+                    "Please install it using `pip install ete3` or visit "
+                    "http://etetoolkit.org/ for more details."
+                ) from exc
+
+            Tree = _Tree
+            NodeStyle = _NodeStyle
+            TextFace = _TextFace
+            TreeStyle = _TreeStyle
 
         tree_node_cls = Tree
         node_style_cls = NodeStyle
@@ -368,7 +440,9 @@ class SyntaxGraphIndex:
             )
 
             if with_edge_labels:
-                edge_text = self._format_edge_label(token_id, with_edge_labels=True)
+                edge_text = self._format_edge_label(
+                    token_id, with_edge_labels=with_edge_labels
+                )
                 if edge_text:
                     node.add_face(
                         text_face_cls(
@@ -379,6 +453,14 @@ class SyntaxGraphIndex:
                         column=0,
                         position="branch-top",
                     )
+
+            # Add all attributes as features to the ete3 node for the node inspector
+            span = self.nodes_by_id[token_id]
+            node_attrs = self._get_all_span_attributes(
+                span, attributes_to_show_in_inspector
+            )
+            for attr, value in node_attrs.items():
+                node.add_feature(attr, value)
 
             for child_id in self.children_by_id.get(token_id, []):
                 node.add_child(build_subtree(child_id))
