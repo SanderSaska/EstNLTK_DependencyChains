@@ -1,4 +1,4 @@
-import estnltk
+from estnltk import Span
 from typing import (
     Dict,
     List,
@@ -183,7 +183,7 @@ class ChainMatch:
     - **sentence_index** (`int`): The index of the sentence in which the match was found.
     - **sentence_span** (`Tuple[int, int]`): The character span (start, end) of the entire sentence in the original text.
     - **role_to_token_id** (`Dict[str, int]`): A dictionary mapping each role defined in the PathPattern to the token ID of the node that was matched for that role in this instance.
-    - **role_to_node** (`Dict[str, estnltk.Span]`): A dictionary mapping each role defined in the PathPattern to the actual estnltk Span annotation of the node that was matched for that role in this instance. This allows for access to all the properties of the matched nodes, not just their token IDs.
+    - **role_to_node** (`Dict[str, Span]`): A dictionary mapping each role defined in the PathPattern to the actual estnltk Span annotation of the node that was matched for that role in this instance. This allows for access to all the properties of the matched nodes, not just their token IDs.
     - **traversed_edges** (`Tuple[Tuple[str, str, EdgeContext], ...]`): A tuple of tuples representing the edges that were traversed to match this pattern. Each inner tuple contains the from_role, to_role, and the EdgeContext of the traversed edge. This provides a detailed record of how the pattern was matched in terms of the dependency graph traversal.
     - **matched_text** (`str`): The text of the entire matched path, which can be useful for debugging, analysis, or as part of the emitted features.
     - **metadata** (`Dict[str, Any]`): An optional dictionary for storing any additional metadata about this match that may be useful for downstream processing, debugging, or analysis. This can include things like confidence scores, timestamps, or any other relevant information that does not fit into the other fields.
@@ -193,7 +193,7 @@ class ChainMatch:
     sentence_index: int
     sentence_span: Tuple[int, int]
     role_to_token_id: Dict[str, int]
-    role_to_node: Dict[str, estnltk.Span]
+    role_to_node: Dict[str, Span]
     traversed_edges: Tuple[
         Tuple[str, str, EdgeContext], ...
     ]  # (from_role, to_role, edge_context) for each traversed edge
@@ -206,7 +206,7 @@ class ChainMatch:
         """
         self._validate_or_raise()
 
-    def get_node(self: Self, role: str) -> estnltk.Span:
+    def get_node(self: Self, role: str) -> Span:
         """
         Get the estnltk Span annotation of the node matched for the given role.
 
@@ -214,7 +214,7 @@ class ChainMatch:
             role (str): The role of the node to retrieve (e.g., "self", "parent", "child", etc.).
 
         Returns:
-            estnltk.Span: The estnltk Span annotation of the node matched for the given role. This allows for easy access to the properties of the matched nodes when processing the results of pattern matching.
+            Span: The estnltk Span annotation of the node matched for the given role. This allows for easy access to the properties of the matched nodes when processing the results of pattern matching.
         """
         if role not in self.role_to_node:
             raise ValueError(f"Role '{role}' not found in this match.")
@@ -355,11 +355,11 @@ class ChainMatch:
             )
 
         if not isinstance(self.role_to_node, dict) or not all(
-            isinstance(k, str) and k.strip() != "" and isinstance(v, estnltk.Span)
+            isinstance(k, str) and k.strip() != "" and isinstance(v, Span)
             for k, v in self.role_to_node.items()
         ):
             raise TypeError(
-                "role_to_node must be a dictionary mapping non-empty strings to estnltk.Span objects."
+                "role_to_node must be a dictionary mapping non-empty strings to Span objects."
             )
 
         if not isinstance(self.traversed_edges, tuple) or not all(

@@ -1,4 +1,4 @@
-import estnltk
+from estnltk import Span, Layer
 from typing import (
     Dict,
     List,
@@ -26,8 +26,8 @@ class SyntaxGraphIndex:
     The graph is built from an estnltk Layer containing the sentence annotations, and provides methods to access nodes, parents, children, and edges in the dependency graph.
 
     ## Attributes:
-    - **sentences_layer** (`estnltk.Layer`): The layer containing the stanza syntax annotations for the sentence from which the graph index is built.
-    - **nodes_by_id** (`Dict[int, estnltk.Span]`): A mapping from token IDs to their corresponding estnltk Span annotations.
+    - **sentences_layer** (`Layer`): The layer containing the stanza syntax annotations for the sentence from which the graph index is built.
+    - **nodes_by_id** (`Dict[int, Span]`): A mapping from token IDs to their corresponding estnltk Span annotations.
     - **parent_by_id** (`Dict[int, Optional[int]]`): A mapping from token IDs to their parent token IDs in the dependency graph.
     - **children_by_id** (`Dict[int, List[int]]`): A mapping from token IDs to a list of their child token IDs in the dependency graph.
     - **token_order** (`List[int]`): A list of token IDs in the order they appear in the sentence.
@@ -46,8 +46,8 @@ class SyntaxGraphIndex:
     - :func:`~SyntaxGraphIndex.has_node`: Checks if a given token ID exists in the graph.
     """
 
-    stanza_syntax: estnltk.Layer
-    nodes_by_id: Dict[int, estnltk.Span]
+    stanza_syntax: Layer
+    nodes_by_id: Dict[int, Span]
     parent_by_id: Dict[int, Optional[int]]
     children_by_id: Dict[int, List[int]]
     token_order: List[int]
@@ -57,7 +57,7 @@ class SyntaxGraphIndex:
 
     def __init__(
         self: Self,
-        stanza_syntax_layer: estnltk.Layer,
+        stanza_syntax_layer: Layer,
         sentence_id: Optional[int] = None,
         sentence_span: Optional[Tuple[int, int]] = None,
     ) -> None:
@@ -66,14 +66,14 @@ class SyntaxGraphIndex:
 
         Args:
             self (Self): The instance of the SyntaxGraphIndex being initialized.
-            stanza_syntax_layer (estnltk.Layer): The layer containing the stanza syntax annotations for the sentence from which to build the graph index.
+            stanza_syntax_layer (Layer): The layer containing the stanza syntax annotations for the sentence from which to build the graph index.
             sentence_id (Optional[int], optional): The ID of the sentence being indexed. Defaults to None.
             sentence_span (Optional[Tuple[int, int]], optional): The character span of the sentence in the original text. Defaults to None.
         """
 
         # Initialize the graph index from the given sentences layer
-        self.stanza_syntax: estnltk.Layer = stanza_syntax_layer
-        self.nodes_by_id: Dict[int, estnltk.Span] = {}
+        self.stanza_syntax: Layer = stanza_syntax_layer
+        self.nodes_by_id: Dict[int, Span] = {}
         self.parent_by_id: Dict[int, Optional[int]] = {}
         self.children_by_id: Dict[int, List[int]] = {}
         self.token_order: List[int] = []
@@ -90,13 +90,13 @@ class SyntaxGraphIndex:
                 "The provided stanza syntax layer does not form a valid tree structure."
             )
 
-    def build_from_layer(self: Self, stanza_syntax: estnltk.Layer) -> None:
+    def build_from_layer(self: Self, stanza_syntax: Layer) -> None:
         """
         Builds the graph index from the provided syntax layer.
 
         Args:
             self (Self): The instance of the SyntaxGraphIndex being built.
-            stanza_syntax (estnltk.Layer): The layer containing the stanza syntax annotations for the sentence from which to build the graph index.
+            stanza_syntax (Layer): The layer containing the stanza syntax annotations for the sentence from which to build the graph index.
         """
         # Build the graph index from the provided sentences layer
         for ann in stanza_syntax:
@@ -117,7 +117,7 @@ class SyntaxGraphIndex:
                 )
             self.children_by_id[ann.head].append(ann.id)
 
-    def get_node(self: Self, token_id: int) -> Optional[estnltk.Span]:
+    def get_node(self: Self, token_id: int) -> Optional[Span]:
         """
         Gets the estnltk Span annotation for a given token ID.
 
@@ -126,11 +126,11 @@ class SyntaxGraphIndex:
             token_id (int): The ID of the token for which to retrieve the annotation.
 
         Returns:
-            Optional[estnltk.Span]: The estnltk Span annotation corresponding to the given token ID, or None if the token ID does not exist in the graph index.
+            Optional[Span]: The estnltk Span annotation corresponding to the given token ID, or None if the token ID does not exist in the graph index.
         """
         return self.nodes_by_id.get(token_id)
 
-    def get_parent(self: Self, token_id: int) -> Optional[estnltk.Span]:
+    def get_parent(self: Self, token_id: int) -> Optional[Span]:
         """
         Gets the parent node of a given token ID in the dependency graph.
 
@@ -139,14 +139,14 @@ class SyntaxGraphIndex:
             token_id (int): The ID of the token for which to retrieve the parent node.
 
         Returns:
-            Optional[estnltk.Span]: The estnltk Span annotation corresponding to the parent node of the given token ID in the dependency graph, or None if the token ID does not exist in the graph index or if it is a root node (with no parent).
+            Optional[Span]: The estnltk Span annotation corresponding to the parent node of the given token ID in the dependency graph, or None if the token ID does not exist in the graph index or if it is a root node (with no parent).
         """
         parent_id = self.parent_by_id.get(token_id)
         if parent_id is not None:
             return self.nodes_by_id.get(parent_id)
         return None
 
-    def get_children(self: Self, token_id: int) -> List[estnltk.Span]:
+    def get_children(self: Self, token_id: int) -> List[Span]:
         """
         Gets the child nodes of a given token ID in the dependency graph.
 
@@ -155,12 +155,12 @@ class SyntaxGraphIndex:
             token_id (int): The ID of the token for which to retrieve the child nodes.
 
         Returns:
-            List[estnltk.Span]: A list of estnltk Span annotations corresponding to the child nodes of the given token ID in the dependency graph. If the token ID does not exist in the graph index or has no children, an empty list is returned.
+            List[Span]: A list of estnltk Span annotations corresponding to the child nodes of the given token ID in the dependency graph. If the token ID does not exist in the graph index or has no children, an empty list is returned.
         """
         child_ids = self.children_by_id.get(token_id, [])
         return [self.nodes_by_id[child_id] for child_id in child_ids]
 
-    def iter_nodes(self: Self) -> Iterable[estnltk.Span]:
+    def iter_nodes(self: Self) -> Iterable[Span]:
         """
         Iterates over all nodes in the graph in the order they appear in the sentence.
 
@@ -168,17 +168,17 @@ class SyntaxGraphIndex:
             self (Self): The instance of the SyntaxGraphIndex being iterated over.
 
         Returns:
-            Iterable[estnltk.Span]: An iterator that yields estnltk Span annotations for each node in the graph, in the order they appear in the sentence.
+            Iterable[Span]: An iterator that yields estnltk Span annotations for each node in the graph, in the order they appear in the sentence.
 
         Yields:
-            estnltk.Span: The estnltk Span annotation for each node in the graph, yielded in the order they appear in the sentence.
+            Span: The estnltk Span annotation for each node in the graph, yielded in the order they appear in the sentence.
         """
         for token_id in self.token_order:
             yield self.nodes_by_id[token_id]
 
     def iter_edges(
         self: Self, direction: DirectionMode = DirectionMode.BOTH
-    ) -> Iterable[Tuple[Optional[estnltk.Span], Optional[estnltk.Span], DirectionMode]]:
+    ) -> Iterable[Tuple[Optional[Span], Optional[Span], DirectionMode]]:
         """
         Iterates over all edges in the graph, optionally filtering by direction (up, down, or both).
 
@@ -187,10 +187,10 @@ class SyntaxGraphIndex:
             direction (DirectionMode, optional): The direction of edges to iterate over. Can be DirectionMode.UP for parent-child edges, DirectionMode.DOWN for child-parent edges, or DirectionMode.BOTH for all edges. Defaults to DirectionMode.BOTH.
 
         Returns:
-            Iterable[Tuple[Optional[estnltk.Span], Optional[estnltk.Span], str]]: _description_
+            Iterable[Tuple[Optional[Span], Optional[Span], str]]: _description_
 
         Yields:
-            Iterator[Iterable[Tuple[Optional[estnltk.Span], Optional[estnltk.Span], str]]]: _description_
+            Iterator[Iterable[Tuple[Optional[Span], Optional[Span], str]]]: _description_
         """
         for token_id in self.token_order:
             node = self.nodes_by_id[token_id]
@@ -206,7 +206,7 @@ class SyntaxGraphIndex:
                         # Skip the root node which has no parent (head = 0)
                         yield (parent_node, node, DirectionMode.DOWN)
 
-    def get_root_nodes(self: Self) -> List[estnltk.Span]:
+    def get_root_nodes(self: Self) -> List[Span]:
         """
         Gets the root nodes of the dependency graph (nodes with no parent).
 
@@ -214,7 +214,7 @@ class SyntaxGraphIndex:
             self (Self): The instance of the SyntaxGraphIndex being queried.
 
         Returns:
-            List[estnltk.Span]: A list of estnltk Span annotations corresponding to the root nodes of the dependency graph (nodes with no parent). If there are no root nodes, an empty list is returned.
+            List[Span]: A list of estnltk Span annotations corresponding to the root nodes of the dependency graph (nodes with no parent). If there are no root nodes, an empty list is returned.
         """
         root_nodes = []
         for token_id in self.token_order:
@@ -237,7 +237,7 @@ class SyntaxGraphIndex:
 
     def _get_all_span_attributes(
         self: Self,
-        span: estnltk.Span,
+        span: Span,
         attributes_to_show_in_inspector: Optional[List[str]] = None,
         ignore_attributes: List[str] = ["children", "parent_span"],
     ) -> Dict[str, Any]:
@@ -247,7 +247,7 @@ class SyntaxGraphIndex:
 
         Args:
             self (Self): The instance of the SyntaxGraphIndex being queried.
-            span (estnltk.Span): The estnltk Span annotation from which to extract attributes.
+            span (Span): The estnltk Span annotation from which to extract attributes.
             attributes_to_show_in_inspector (Optional[List[str]], optional): Attributes to display in the node inspector.
             ignore_attributes (List[str], optional): Attributes to ignore when extracting features for graph nodes/edges. Defaults to ["children", "parent_span"].
 

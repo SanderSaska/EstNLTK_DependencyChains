@@ -1,4 +1,4 @@
-import estnltk
+from estnltk import Span
 from typing import (
     Dict,
     Iterator,
@@ -9,11 +9,18 @@ from typing import (
 )
 from dataclasses import dataclass
 
-from .types import DirectionMode, EdgeContext
-from .graph import SyntaxGraphIndex
-from .patterns import PathPattern, ChainMatch, MatchCollector
-from .conditions import EdgeConstraint
-from .config import (
+from estnltk.taggers.system.rule_taggers.deprel_rules.types import (
+    DirectionMode,
+    EdgeContext,
+)
+from estnltk.taggers.system.rule_taggers.deprel_rules.graph import SyntaxGraphIndex
+from estnltk.taggers.system.rule_taggers.deprel_rules.patterns import (
+    PathPattern,
+    ChainMatch,
+    MatchCollector,
+)
+from estnltk.taggers.system.rule_taggers.deprel_rules.conditions import EdgeConstraint
+from estnltk.taggers.system.rule_taggers.deprel_rules.config import (
     DEFAULT_MAX_MATCHES_PER_SENTENCE,
     DEFAULT_DEDUP_MODE_MATCHER,
     VALID_DEDUP_MODES,
@@ -92,7 +99,7 @@ class DepChildMatcher:
             if not anchor_constraint.matches(anchor_node):
                 continue
 
-            initial_nodes: Dict[int, estnltk.Span] = {anchor_index: anchor_node}
+            initial_nodes: Dict[int, Span] = {anchor_index: anchor_node}
             initial_edges: Dict[int, EdgeContext] = {}
 
             for assigned_nodes, assigned_edges in self._expand_assignments(
@@ -122,21 +129,21 @@ class DepChildMatcher:
         self: Self,
         pattern: PathPattern,
         graph_index: SyntaxGraphIndex,
-        assigned_nodes_by_index: Dict[int, estnltk.Span],
+        assigned_nodes_by_index: Dict[int, Span],
         assigned_edge_by_index: Dict[int, EdgeContext],
-    ) -> Iterator[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]]:
+    ) -> Iterator[Tuple[Dict[int, Span], Dict[int, EdgeContext]]]:
         """
         Recursively expand a partial assignment until all pattern steps are set.
 
         Args:
             pattern (PathPattern): Pattern being matched.
             graph_index (SyntaxGraphIndex): Sentence-level dependency graph.
-            assigned_nodes_by_index (Dict[int, estnltk.Span]): Current partial
+            assigned_nodes_by_index (Dict[int, Span]): Current partial
                 node assignment keyed by `node_steps` index.
             assigned_edge_by_index (Dict[int, EdgeContext]): Current partial
                 edge assignment keyed by `edge_steps` index.
         Yields:
-            Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]: A complete
+            Tuple[Dict[int, Span], Dict[int, EdgeContext]]: A complete
                 assignment of nodes and edges that satisfies the pattern.
         """
         # Completion condition
@@ -201,10 +208,10 @@ class DepChildMatcher:
     def _enumerate_from_node(
         self: Self,
         graph_index: SyntaxGraphIndex,
-        source_node: estnltk.Span,
+        source_node: Span,
         edge_constraint: EdgeConstraint,
-    ) -> List[Tuple[estnltk.Span, EdgeContext]]:
-        candidates: List[Tuple[estnltk.Span, EdgeContext]] = []
+    ) -> List[Tuple[Span, EdgeContext]]:
+        candidates: List[Tuple[Span, EdgeContext]] = []
         min_hops, max_hops = self._resolve_hop_bounds(
             graph_index=graph_index,
             min_hops=edge_constraint.min_hops,
@@ -232,18 +239,18 @@ class DepChildMatcher:
     def _nodes_at_exact_hops(
         self: Self,
         graph_index: SyntaxGraphIndex,
-        start_node: estnltk.Span,
+        start_node: Span,
         direction: DirectionMode,
         hops: int,
-    ) -> List[estnltk.Span]:
+    ) -> List[Span]:
         if hops == 0:
             return [start_node]
 
         if direction == DirectionMode.DOWN:
-            results: List[estnltk.Span] = []
+            results: List[Span] = []
 
             def _dfs_down(
-                node: estnltk.Span,
+                node: Span,
                 remaining_hops: int,
             ):
                 if remaining_hops == 0:
@@ -277,7 +284,7 @@ class DepChildMatcher:
             return (1, 0)
         return (lower, upper)
 
-    def _get_node_id(self: Self, node: estnltk.Span) -> int:
+    def _get_node_id(self: Self, node: Span) -> int:
         return int(getattr(node, "id"))
 
     def _build_chain_match(
@@ -285,10 +292,10 @@ class DepChildMatcher:
         pattern: PathPattern,
         sentence_index: int,
         sentence_span: Tuple[int, int],
-        assigned_nodes_by_index: Dict[int, estnltk.Span],
+        assigned_nodes_by_index: Dict[int, Span],
         assigned_edge_by_index: Dict[int, EdgeContext],
     ) -> ChainMatch:
-        role_to_node: Dict[str, estnltk.Span] = {}
+        role_to_node: Dict[str, Span] = {}
         role_to_token_id: Dict[str, int] = {}
 
         for node_index, node_constraint in enumerate(pattern.node_steps):

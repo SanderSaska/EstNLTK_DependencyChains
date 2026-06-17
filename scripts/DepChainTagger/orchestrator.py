@@ -1,4 +1,4 @@
-import estnltk
+from estnltk import Layer
 from typing import (
     Dict,
     List,
@@ -75,14 +75,14 @@ class DepTaggerOrchestrator:
 
     def tag_sentence_layers(
         self: Self,
-        sentence_syntax_layers: Iterable[estnltk.Layer],
+        sentence_syntax_layers: Iterable[Layer],
         sentence_spans: Optional[Iterable[Tuple[int, int]]] = None,
     ) -> List[ChainMatch]:
         """
         Run dependency-chain matching over sentence-level syntax layers.
 
         Args:
-            sentence_syntax_layers (Iterable[estnltk.Layer]): Iterable of
+            sentence_syntax_layers (Iterable[Layer]): Iterable of
                 per-sentence syntax layers (e.g., split `stanza_syntax`).
             sentence_spans (Optional[Iterable[Tuple[int, int]]], optional):
                 Optional sentence character spans aligned with input order.
@@ -128,7 +128,7 @@ class DepTaggerOrchestrator:
 
     def tag_sentence_layer(
         self: Self,
-        sentence_syntax_layer: estnltk.Layer,
+        sentence_syntax_layer: Layer,
         sentence_index: int = 0,
         sentence_span: Optional[Tuple[int, int]] = None,
     ) -> List[ChainMatch]:
@@ -136,7 +136,7 @@ class DepTaggerOrchestrator:
         Convenience wrapper for matching one sentence syntax layer.
 
         Args:
-            sentence_syntax_layer (estnltk.Layer): One sentence syntax layer.
+            sentence_syntax_layer (Layer): One sentence syntax layer.
             sentence_index (int, optional): Sentence index to stamp into
                 results. Defaults to 0.
             sentence_span (Optional[Tuple[int, int]], optional): Optional
@@ -174,14 +174,14 @@ class DepTaggerOrchestrator:
 
     def tag_and_serialize_sentence_layers(
         self: Self,
-        sentence_syntax_layers: Iterable[estnltk.Layer],
+        sentence_syntax_layers: Iterable[Layer],
         sentence_spans: Optional[Iterable[Tuple[int, int]]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Run full pipeline and return serialized relational rows.
 
         Args:
-            sentence_syntax_layers (Iterable[estnltk.Layer]): Iterable of
+            sentence_syntax_layers (Iterable[Layer]): Iterable of
                 per-sentence syntax layers.
             sentence_spans (Optional[Iterable[Tuple[int, int]]], optional):
                 Optional aligned sentence spans.

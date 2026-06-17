@@ -1,4 +1,4 @@
-import estnltk
+from estnltk import Span
 from typing import (
     Dict,
     Iterator,
@@ -118,7 +118,7 @@ class DepChainMatcher:
             if not anchor_constraint.matches(anchor_node):
                 continue
 
-            initial_nodes: Dict[int, estnltk.Span] = {anchor_index: anchor_node}
+            initial_nodes: Dict[int, Span] = {anchor_index: anchor_node}
             initial_edges: Dict[int, EdgeContext] = {}
             for assigned_nodes, assigned_edges in self._expand_assignments(
                 pattern=pattern,
@@ -145,21 +145,21 @@ class DepChainMatcher:
         self: Self,
         pattern: PathPattern,
         graph_index: SyntaxGraphIndex,
-        assigned_nodes_by_index: Dict[int, estnltk.Span],
+        assigned_nodes_by_index: Dict[int, Span],
         assigned_edge_by_index: Dict[int, EdgeContext],
-    ) -> Iterator[Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]]:
+    ) -> Iterator[Tuple[Dict[int, Span], Dict[int, EdgeContext]]]:
         """
         Recursively expand a partial assignment until all pattern steps are set.
 
         Args:
             pattern (PathPattern): Pattern being matched.
             graph_index (SyntaxGraphIndex): Sentence-level dependency graph.
-            assigned_nodes_by_index (Dict[int, estnltk.Span]): Current partial
+            assigned_nodes_by_index (Dict[int, Span]): Current partial
                 node assignment keyed by `node_steps` index.
             assigned_edge_by_index (Dict[int, EdgeContext]): Current partial
                 edge assignment keyed by `edge_steps` index.
         Yields:
-            Tuple[Dict[int, estnltk.Span], Dict[int, EdgeContext]]: A complete
+            Tuple[Dict[int, Span], Dict[int, EdgeContext]]: A complete
                 assignment of nodes and edges that satisfies the pattern.
         """
         if len(assigned_nodes_by_index) == len(pattern.node_steps):
@@ -224,7 +224,7 @@ class DepChainMatcher:
     def _get_frontier_options(
         self: Self,
         pattern: PathPattern,
-        assigned_nodes_by_index: Dict[int, estnltk.Span],
+        assigned_nodes_by_index: Dict[int, Span],
     ) -> List[Tuple[int, int, int]]:
         """
         Find one-step expansion options around currently assigned indices.
@@ -251,9 +251,9 @@ class DepChainMatcher:
     def _enumerate_from_node(
         self: Self,
         graph_index: SyntaxGraphIndex,
-        source_node: estnltk.Span,
+        source_node: Span,
         edge_constraint: EdgeConstraint,
-    ) -> List[Tuple[estnltk.Span, EdgeContext]]:
+    ) -> List[Tuple[Span, EdgeContext]]:
         """
         Enumerate candidate target nodes reachable from `source_node`.
 
@@ -262,10 +262,10 @@ class DepChainMatcher:
 
         Args:
             graph_index (SyntaxGraphIndex): Sentence-level dependency graph.
-            source_node (estnltk.Span): Node from which to enumerate.
+            source_node (Span): Node from which to enumerate.
             edge_constraint (EdgeConstraint): Constraint the edge must satisfy.
         """
-        candidates: List[Tuple[estnltk.Span, EdgeContext]] = []
+        candidates: List[Tuple[Span, EdgeContext]] = []
         min_hops, max_hops = self._resolve_hop_bounds(
             graph_index=graph_index,
             min_hops=edge_constraint.min_hops,
@@ -291,9 +291,9 @@ class DepChainMatcher:
     def _enumerate_sources_to_target(
         self: Self,
         graph_index: SyntaxGraphIndex,
-        target_node: estnltk.Span,
+        target_node: Span,
         edge_constraint: EdgeConstraint,
-    ) -> List[Tuple[estnltk.Span, EdgeContext]]:
+    ) -> List[Tuple[Span, EdgeContext]]:
         """
         Enumerate candidate source nodes that can reach `target_node`.
 
@@ -307,10 +307,10 @@ class DepChainMatcher:
 
         Args:
             graph_index (SyntaxGraphIndex): Sentence-level dependency graph.
-            target_node (estnltk.Span): The target node to reach.
+            target_node (Span): The target node to reach.
             edge_constraint (EdgeConstraint): Constraint the edge must satisfy.
         """
-        candidates: List[Tuple[estnltk.Span, EdgeContext]] = []
+        candidates: List[Tuple[Span, EdgeContext]] = []
         min_hops, max_hops = self._resolve_hop_bounds(
             graph_index=graph_index,
             min_hops=edge_constraint.min_hops,
@@ -373,15 +373,15 @@ class DepChainMatcher:
     def _nodes_at_exact_hops(
         self: Self,
         graph_index: SyntaxGraphIndex,
-        start_node: estnltk.Span,
+        start_node: Span,
         direction: DirectionMode,
         hops: int,
-    ) -> List[estnltk.Span]:
+    ) -> List[Span]:
         """
         Return all nodes reachable from `start_node` at exactly `hops`.
 
         Returns:
-            List[estnltk.Span]: List of reachable nodes.
+            List[Span]: List of reachable nodes.
             `(reachable_node)`.
         """
         if hops == 0:
@@ -397,10 +397,10 @@ class DepChainMatcher:
             return [current_node]
 
         if direction == DirectionMode.DOWN:
-            results: List[estnltk.Span] = []
+            results: List[Span] = []
 
             def _dfs_down(
-                node: estnltk.Span,
+                node: Span,
                 remaining_hops: int,
             ) -> None:
                 if remaining_hops == 0:
@@ -461,7 +461,7 @@ class DepChainMatcher:
         )
         return edge_context
 
-    def _get_node_id(self: Self, node: estnltk.Span) -> int:
+    def _get_node_id(self: Self, node: Span) -> int:
         """
         Read a node ID from estnltk span-like annotations as an integer.
         """
@@ -472,13 +472,13 @@ class DepChainMatcher:
         pattern: PathPattern,
         sentence_index: int,
         sentence_span: Tuple[int, int],
-        assigned_nodes_by_index: Dict[int, estnltk.Span],
+        assigned_nodes_by_index: Dict[int, Span],
         assigned_edge_by_index: Dict[int, EdgeContext],
     ) -> ChainMatch:
         """
         Convert a completed assignment into one `ChainMatch` object.
         """
-        role_to_node: Dict[str, estnltk.Span] = {}
+        role_to_node: Dict[str, Span] = {}
         role_to_token_id: Dict[str, int] = {}
 
         for node_index, node_constraint in enumerate(pattern.node_steps):
