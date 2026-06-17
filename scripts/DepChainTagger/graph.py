@@ -7,7 +7,6 @@ from typing import (
     Iterable,
     Self,
     Any,
-    Type,
 )
 
 from .types import DirectionMode
