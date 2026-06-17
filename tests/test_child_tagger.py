@@ -2,8 +2,8 @@
 from typing import Any, cast
 from types import SimpleNamespace
 
-import estnltk
 import pytest
+from estnltk import Text
 
 from scripts.DepChainTagger.child_matcher import DepChildMatcher
 from scripts.DepChainTagger.dep_child_tagger import DepChildTagger
@@ -91,7 +91,7 @@ def test_constructor_accepts_custom_input_layer_names():
 
 
 def test_annotation_decorator_can_filter_and_update_payload():
-    text = estnltk.Text("Ta andis raamatu.")
+    text = Text("Ta andis raamatu.")
 
     def decorator(text_obj, base_span, annotation):
         if annotation["pattern_name"] == "drop_me":
@@ -143,7 +143,7 @@ def test_add_match_to_layer_uses_annotation_decorator():
         annotation_decorator=dummy_decorator,
     )
 
-    layer = DummyLayer(text_object=estnltk.Text("Ta andis raamatu."))
+    layer = DummyLayer(text_object=Text("Ta andis raamatu."))
     keep_match = SimpleNamespace(
         pattern_name="base_p",
         role_to_node={

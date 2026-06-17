@@ -1,6 +1,6 @@
 # DepChainMatcher class testing
 import pytest
-import estnltk
+from estnltk import Text
 
 from scripts.DepChainTagger.conditions import (
     EdgeConstraint,
@@ -16,7 +16,7 @@ from scripts.DepChainTagger.types import ConditionMode, DirectionMode
 @pytest.fixture(scope="module")
 def sample_graph():
     sample_text = "Ta andis lendurist abikaasale oma raamatu."
-    text_obj = estnltk.Text(sample_text)
+    text_obj = Text(sample_text)
     text_obj.tag_layer("morph_extended")
     try:
         from estnltk_neural.taggers import StanzaSyntaxTagger

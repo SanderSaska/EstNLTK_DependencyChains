@@ -1,5 +1,6 @@
-import estnltk
+# Patterns and ChainMatch/MatchCollector class testing
 import pytest
+from estnltk import Text
 
 from scripts.DepChainTagger.conditions import (
     NodeConstraint,
@@ -14,7 +15,7 @@ from scripts.DepChainTagger.types import ConditionMode, DirectionMode, EdgeConte
 @pytest.fixture(scope="module")
 def sample_graph():
     sample_text = "Ta andis lendurist abikaasale oma raamatu."
-    text_obj = estnltk.Text(sample_text)
+    text_obj = Text(sample_text)
     text_obj.tag_layer("morph_extended")
     # Lazy import of stanza tagger to avoid heavy startup at module import time
     try:

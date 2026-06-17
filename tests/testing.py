@@ -1,4 +1,4 @@
-# ValueCondition, NestedValueCondition, NodeConstraint and EdgeConstraint class testing
+# ValueCondition class testing
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -389,11 +389,15 @@ def test_nodeconstraint_feats_allowed_in_attribute_conditions() -> None:
 # EdgeConstraint class testing
 def make_edge_context(
     direction: DirectionMode,
+    attribute_conditions: dict | None,
+    nested_attribute_conditions: dict | None,
     hops: int,
 ) -> EdgeContext:
     """Build an EdgeContext instance for tests."""
     ctx = EdgeContext(
         direction=direction,
+        attributes=attribute_conditions,
+        nested_attributes=nested_attribute_conditions,
         hops=hops,
     )
     return ctx
@@ -402,55 +406,104 @@ def make_edge_context(
 def test_edgeconstraint_up_and_direction_mismatch() -> None:
     c_up = EdgeConstraint(
         direction=DirectionMode.UP,
+        attribute_conditions={"deprel": ValueCondition(ConditionMode.EXACT, "nmod")},
         min_hops=1,
         max_hops=2,
     )
-    ctx_up_ok = make_edge_context(DirectionMode.UP, 1)
-    # Check: matching works for correct direction and hops
+    ctx_up_ok = make_edge_context(DirectionMode.UP, {"deprel": "nmod"}, None, 1)
+    # Check: matching works for correct direction and deprel
     assert c_up.matches(ctx_up_ok)
 
-    ctx_wrong_dir = make_edge_context(DirectionMode.DOWN, 1)
+    ctx_wrong_dir = make_edge_context(DirectionMode.DOWN, {"deprel": "nmod"}, None, 1)
     # Check: wrong direction does not match
     assert not c_up.matches(ctx_wrong_dir)
 
 
-def test_edgeconstraint_both_direction_and_hops() -> None:
+def test_edgeconstraint_both_direction_and_deprel_hops() -> None:
     c_both = EdgeConstraint(
         direction=DirectionMode.BOTH,
+        attribute_conditions={"deprel": ValueCondition(ConditionMode.EXACT, "obl")},
         min_hops=1,
         max_hops=3,
     )
-    # Check: BOTH direction accepts both up and down when hops are OK
-    assert c_both.matches(make_edge_context(DirectionMode.UP, 2))
-    assert c_both.matches(make_edge_context(DirectionMode.DOWN, 2))
+    # Check: BOTH direction accepts both up and down when deprel and hops are OK
+    assert c_both.matches(
+        make_edge_context(DirectionMode.UP, {"deprel": "obl"}, None, 2)
+    )
+    assert c_both.matches(
+        make_edge_context(DirectionMode.DOWN, {"deprel": "obl"}, None, 2)
+    )
     c_up = EdgeConstraint(
         direction=DirectionMode.UP,
+        attribute_conditions={"deprel": ValueCondition(ConditionMode.EXACT, "nmod")},
         min_hops=1,
         max_hops=2,
     )
-    # Check: mismatched hops fall outside allowed ranges
-    assert not c_up.matches(make_edge_context(DirectionMode.UP, 0))
-    assert not c_up.matches(make_edge_context(DirectionMode.UP, 3))
+    # Check: mismatched deprel or hops fall outside allowed ranges
+    assert not c_up.matches(
+        make_edge_context(DirectionMode.UP, {"deprel": "obl"}, None, 1)
+    )
+    assert not c_up.matches(
+        make_edge_context(DirectionMode.UP, {"deprel": "nmod"}, None, 0)
+    )
+    assert not c_up.matches(
+        make_edge_context(DirectionMode.UP, {"deprel": "nmod"}, None, 3)
+    )
 
 
 def test_edgeconstraint_policy_describe_and_validation() -> None:
     c_up = EdgeConstraint(
         direction=DirectionMode.UP,
+        attribute_conditions={"deprel": ValueCondition(ConditionMode.EXACT, "nmod")},
         min_hops=1,
         max_hops=2,
     )
 
-    # Check: describe contains human-readable direction and hops info
+    # Check: describe contains human-readable direction, attribute and hops info
     desc = c_up.describe()
     assert "Direction: up" in desc
+    assert "Attribute 'deprel':" in desc
     assert "Hops:" in desc
 
     with pytest.raises(TypeError):
         bad_direction = cast(Any, "up")
         EdgeConstraint(direction=bad_direction)
+    with pytest.raises(TypeError):
+        bad_edge_attribute_conditions = cast(Any, {"deprel": "not-a-valuecondition"})
+        EdgeConstraint(
+            direction=DirectionMode.UP,
+            attribute_conditions=bad_edge_attribute_conditions,
+        )
+    with pytest.raises(ValueError):
+        EdgeConstraint(
+            direction=DirectionMode.UP,
+            attribute_conditions={
+                "meta": ValueCondition(ConditionMode.EXACT, {"a": 1})
+            },
+        )
     with pytest.raises(ValueError):
         EdgeConstraint(direction=DirectionMode.UP, min_hops=-1)
     with pytest.raises(ValueError):
         EdgeConstraint(direction=DirectionMode.UP, max_hops=-1)
     with pytest.raises(ValueError):
         EdgeConstraint(direction=DirectionMode.UP, min_hops=3, max_hops=1)
+
+
+c_up = EdgeConstraint(
+    direction=DirectionMode.UP,
+    attribute_conditions={"deprel": ValueCondition(ConditionMode.EXACT, "nmod")},
+    min_hops=1,
+    max_hops=2,
+)
+ctx_up_ok = make_edge_context(DirectionMode.UP, {"deprel": "nmod"}, None, 1)
+print(c_up.describe())
+print(f"Direction: {getattr(ctx_up_ok, 'direction', 'missing')}")
+print(f"Attribute conditions: {getattr(ctx_up_ok, 'attribute_conditions', 'missing')}")
+print(
+    f"Nested attribute conditions: {getattr(ctx_up_ok, 'nested_attribute_conditions', 'missing')}"
+)
+print(f"Hops: {getattr(ctx_up_ok, 'hops', 'missing')}")
+
+print(getattr(ctx_up_ok, "attribute_conditions", "missing").get("deprel", "missing"))
+# Check: matching works for correct direction and deprel
+# assert c_up.matches(ctx_up_ok)

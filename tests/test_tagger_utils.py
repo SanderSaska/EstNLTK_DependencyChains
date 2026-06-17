@@ -1,3 +1,5 @@
+# Tagger utils testing
+from estnltk import Text
 from scripts.DepChainTagger.conditions import (
     EdgeConstraint,
     NodeConstraint,
@@ -12,7 +14,6 @@ from scripts.DepChainTagger.tagger_utils import (
 )
 from scripts.DepChainTagger.patterns import ChainMatch, PathPattern
 from scripts.DepChainTagger.types import ConditionMode, DirectionMode, EdgeContext
-import estnltk
 
 
 def build_pattern() -> PathPattern:
@@ -53,7 +54,7 @@ def test_collect_schema_fields() -> None:
 def test_build_match_annotation_payload() -> None:
     """A match should become one relation row with role spans and flattened metadata."""
     pattern = build_pattern()
-    text_obj = estnltk.Text("1990. aasta kuumal suvel")
+    text_obj = Text("1990. aasta kuumal suvel")
     text_obj.tag_layer("words")
     child = text_obj.words[1]
     anchor = text_obj.words[3]

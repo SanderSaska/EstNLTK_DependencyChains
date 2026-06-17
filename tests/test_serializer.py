@@ -1,6 +1,7 @@
+# ChainMatchSerializer class testing
 import pytest
 
-import estnltk
+from estnltk import Text
 from scripts.DepChainTagger.graph import SyntaxGraphIndex
 from scripts.DepChainTagger.patterns import ChainMatch, MatchCollector
 from scripts.DepChainTagger.serializer import ChainMatchSerializer
@@ -10,7 +11,7 @@ from scripts.DepChainTagger.types import DirectionMode, EdgeContext
 @pytest.fixture
 def sample_nodes():
     sample_text = "Ta andis lendurist abikaasale oma raamatu."
-    text_obj = estnltk.Text(sample_text)
+    text_obj = Text(sample_text)
     text_obj.tag_layer("morph_extended")
     try:
         from estnltk_neural.taggers import StanzaSyntaxTagger

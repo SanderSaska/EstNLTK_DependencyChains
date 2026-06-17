@@ -1,6 +1,6 @@
 # DepTaggerOrchestrator class testing
-import estnltk
 import pytest
+from estnltk import Text
 
 from scripts.DepChainTagger.conditions import (
     EdgeConstraint,
@@ -19,7 +19,7 @@ def sample_layers_and_spans():
     sample_text = (
         "Ta andis lendurist abikaasale oma raamatu. See raamat on väga huvitav."
     )
-    text_obj = estnltk.Text(sample_text)
+    text_obj = Text(sample_text)
     text_obj.tag_layer("morph_extended")
     try:
         from estnltk_neural.taggers import StanzaSyntaxTagger

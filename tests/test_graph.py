@@ -1,7 +1,8 @@
 # SyntaxGraphIndex class testing
-import pytest
 from types import SimpleNamespace
 from typing import Any, cast
+
+import pytest
 
 import scripts.DepChainTagger.graph as graph_module
 from scripts.DepChainTagger.graph import SyntaxGraphIndex

@@ -9,18 +9,18 @@ from typing import (
 )
 from dataclasses import dataclass
 
-from estnltk.taggers.system.rule_taggers.deprel_rules.types import (
+from .types import (
     DirectionMode,
     EdgeContext,
 )
-from estnltk.taggers.system.rule_taggers.deprel_rules.graph import SyntaxGraphIndex
-from estnltk.taggers.system.rule_taggers.deprel_rules.patterns import (
+from .graph import SyntaxGraphIndex
+from .patterns import (
     PathPattern,
     ChainMatch,
     MatchCollector,
 )
-from estnltk.taggers.system.rule_taggers.deprel_rules.conditions import EdgeConstraint
-from estnltk.taggers.system.rule_taggers.deprel_rules.config import (
+from .conditions import EdgeConstraint
+from .config import (
     DEFAULT_MAX_MATCHES_PER_SENTENCE,
     DEFAULT_DEDUP_MODE_MATCHER,
     VALID_DEDUP_MODES,
