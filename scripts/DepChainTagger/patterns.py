@@ -114,7 +114,9 @@ class PathPattern:
             if i < len(self.edge_steps):
                 parts.append(f"Edge step {i}: {self.edge_steps[i].describe()}")
         parts.append(f"Anchor role: {self.anchor_role}")
-        parts.append(f"Emit roles: {', '.join(self.emit_roles)}")
+        parts.append(
+            f"Emit roles: {', '.join(self.emit_roles) if self.emit_roles else 'None'}"
+        )
         return "\n".join(parts)
 
     def _validate_or_raise(self: Self) -> None:

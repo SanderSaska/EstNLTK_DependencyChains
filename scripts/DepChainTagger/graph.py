@@ -7,6 +7,7 @@ from typing import (
     Iterable,
     Self,
     Any,
+    Type,
 )
 
 from .types import DirectionMode
@@ -391,11 +392,11 @@ class SyntaxGraphIndex:
         """
         global Tree, NodeStyle, TextFace, TreeStyle
 
-        if Tree is None:
+        if any(cls is None for cls in [Tree, NodeStyle, TextFace, TreeStyle]):
             try:
                 from ete3 import Tree as _Tree
-                from ete3.treeview.faces import TextFace as _TextFace
                 from ete3.treeview.main import NodeStyle as _NodeStyle
+                from ete3.treeview.faces import TextFace as _TextFace
                 from ete3.treeview.main import TreeStyle as _TreeStyle
             except ImportError as exc:
                 raise ImportError(
@@ -408,6 +409,14 @@ class SyntaxGraphIndex:
             NodeStyle = _NodeStyle
             TextFace = _TextFace
             TreeStyle = _TreeStyle
+
+        # Assert that the ete3 classes have been loaded successfully
+        assert (
+            Tree is not None
+            and NodeStyle is not None
+            and TextFace is not None
+            and TreeStyle is not None
+        ), "Failed to load ete3 classes for visualization."
 
         tree_node_cls = Tree
         node_style_cls = NodeStyle

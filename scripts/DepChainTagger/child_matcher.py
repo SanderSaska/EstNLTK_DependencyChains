@@ -303,8 +303,9 @@ class DepChildMatcher:
             edge_context = assigned_edge_by_index[edge_index]
             traversed_edges.append((from_role, to_role, edge_context))
 
+        emit_roles = pattern.emit_roles or ()
         matched_text = " ".join(
-            getattr(role_to_node[role], "text", "") for role in pattern.emit_roles
+            getattr(role_to_node[role], "text", "") for role in emit_roles
         ).strip()
 
         return ChainMatch(
